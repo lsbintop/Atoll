@@ -545,6 +545,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let screenHeight = NSScreen.main?.visibleFrame.height ?? 800
             let maxFraction = Defaults[.terminalMaxHeightFraction]
             baseSize.height = min(screenHeight * maxFraction, max(300, screenHeight * maxFraction))
+        } else if coordinator.currentView == .daoliYu {
+            baseSize.height = 360
         }
         
         let adjustedContentSize = statsAdjustedNotchSize(

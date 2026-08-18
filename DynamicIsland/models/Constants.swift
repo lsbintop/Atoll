@@ -410,6 +410,7 @@ enum MediaControllerType: String, CaseIterable, Identifiable, Defaults.Serializa
     case youtubeMusic = "Youtube Music"
     case amazonMusic = "Amazon Music"
     case cider = "Cider"
+    case daoliYu = "DaoliYu"
     
     var id: String { self.rawValue }
     
@@ -421,6 +422,7 @@ enum MediaControllerType: String, CaseIterable, Identifiable, Defaults.Serializa
         case .youtubeMusic: return String(localized: "Youtube Music")
         case .amazonMusic: return String(localized: "Amazon Music")
         case .cider: return String(localized: "Cider")
+        case .daoliYu: return "DaoliYu"
         }
     }
 }
@@ -1163,6 +1165,10 @@ extension Defaults.Keys {
     static let terminalForegroundColor = Key<Color>("terminalForegroundColor", default: .white)
     static let terminalCursorColor = Key<Color>("terminalCursorColor", default: Color(.selectedControlColor))
     static let terminalStickyMode = Key<Bool>("terminalStickyMode", default: false)
+    
+    // MARK: DaoliYu
+    static let enableDaoliYu = Key<Bool>("enableDaoliYu", default: false)
+    static let daoliYuStreamQuality = Key<Int>("daoliYuStreamQuality", default: 0)
     
     // MARK: Timer Feature
     static let enableTimerFeature = Key<Bool>("enableTimerFeature", default: true)

@@ -367,6 +367,18 @@ class DynamicIslandViewModel: NSObject, ObservableObject {
             return adjustedSize
         }
 
+        if coordinator.currentView == .terminal {
+            let screenHeight = NSScreen.main?.visibleFrame.height ?? 800
+            let maxFraction = Defaults[.terminalMaxHeightFraction]
+            adjustedSize.height = min(screenHeight * maxFraction, max(300, screenHeight * maxFraction))
+            return adjustedSize
+        }
+
+        if coordinator.currentView == .daoliYu {
+            adjustedSize.height = 360
+            return adjustedSize
+        }
+
         return statsAdjustedNotchSize(
             from: adjustedSize,
             isStatsTabActive: coordinator.currentView == .stats,

@@ -51,6 +51,7 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
     case appearance
     case lockScreen
     case media
+    case daoliYu
     case devices
     case extensions
     case timer
@@ -74,12 +75,12 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
     var group: SettingsTabGroup {
         switch self {
         case .general, .appearance:                                          return .core
-        case .media, .liveActivities, .lockScreen, .devices:                 return .mediaAndDisplay
+        case .media, .liveActivities, .lockScreen, .devices, .daoliYu:         return .mediaAndDisplay
         case .hudAndOSD, .battery:                                           return .system
         case .timer, .calendar, .notes:                                      return .productivity
         case .clipboard, .screenAssistant, .colorPicker, .shelf,
              .downloads, .shortcuts:                                         return .utilities
-        case .stats, .terminal:                                              return .developer
+        case .stats, .terminal:                                               return .developer
         case .extensions:                                                    return .integrations
         case .about:                                                         return .info
         }
@@ -107,6 +108,7 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
         case .shortcuts: return String(localized: "Shortcuts")
         case .notes: return String(localized: "Notes")
         case .terminal: return String(localized: "Terminal")
+        case .daoliYu: return "道理鱼"
         case .about: return String(localized: "About")
         }
     }
@@ -133,6 +135,7 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
         case .shortcuts: return "keyboard"
         case .notes: return "note.text"
         case .terminal: return "apple.terminal"
+        case .daoliYu: return "music.note.house"
         case .about: return "info.circle"
         }
     }
@@ -159,6 +162,7 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
         case .shortcuts: return .orange
         case .notes: return Color(red: 0.979, green: 0.716, blue: 0.153, opacity: 1.000)
         case .terminal: return Color(red: 0.2, green: 0.8, blue: 0.4)
+        case .daoliYu: return Color(red: 0.2, green: 0.8, blue: 0.6)
         case .about: return .secondary
         }
     }
@@ -507,6 +511,7 @@ struct SettingsView: View {
             // Developer
             .stats,
             .terminal,
+            .daoliYu,
             // Integrations
             .extensions,
             // Info
@@ -1025,6 +1030,10 @@ struct SettingsView: View {
         case .terminal:
             SettingsForm(tab: .terminal) {
                 TerminalSettings()
+            }
+        case .daoliYu:
+            SettingsForm(tab: .daoliYu) {
+                DaoliYuSettings()
             }
         case .about:
             if let controller = updaterController {
@@ -8385,14 +8394,18 @@ struct TerminalSettings: View {
         "\(Int(terminalMaxHeightFraction * 100))% of screen"
     }
 
-    /// All monospaced font families available on the system.
     private var monospacedFontFamilies: [String] {
         NSFontManager.shared.availableFontFamilies.filter { family in
             guard let font = NSFont(name: family, size: 12) else { return false }
-            return font.isFixedPitch
-                || font.fontDescriptor.symbolicTraits.contains(.monoSpace)
-        }
-        .sorted()
+            return font.isFixedPitch || font.fontDescriptor.symbolicTraits.contains(.monoSpace)
+        }.sorted()
+    }
+
+    private var proportionalFontFamilies: [String] {
+        NSFontManager.shared.availableFontFamilies.filter { family in
+            guard let font = NSFont(name: family, size: 12) else { return false }
+            return !font.isFixedPitch && !font.fontDescriptor.symbolicTraits.contains(.monoSpace)
+        }.sorted()
     }
 
     /// Display name for the font picker — shows "System Monospaced" when no custom font is set.
@@ -8456,6 +8469,12 @@ struct TerminalSettings: View {
                         Text("System Monospaced").tag("")
                         Divider()
                         ForEach(monospacedFontFamilies, id: \.self) { family in
+                            Text(family)
+                                .font(.custom(family, size: 13))
+                                .tag(family)
+                        }
+                        Divider()
+                        ForEach(proportionalFontFamilies, id: \.self) { family in
                             Text(family)
                                 .font(.custom(family, size: 13))
                                 .tag(family)
@@ -8633,6 +8652,152 @@ struct TerminalSettings: View {
             }
         }
         .navigationTitle("Terminal")
+    }
+}
+
+// MARK: - DaoliYu Settings
+
+struct DaoliYuSettings: View {
+    @Default(.enableDaoliYu) var enableDaoliYu
+    @ObservedObject private var apiClient = DaoliYuAPIClient.shared
+    @ObservedObject private var manager = DaoliYuManager.shared
+    @State private var serverURL = ""
+    @State private var username = ""
+    @State private var password = ""
+    @State private var isLoggingIn = false
+    @State private var loginError: String?
+    @State private var streamQuality: DaoliYuAudioQuality = .original
+
+    var body: some View {
+        Form {
+            Section {
+                Defaults.Toggle(key: .enableDaoliYu) {
+                    Text("启用道理鱼")
+                }
+            } header: {
+                Text("通用")
+            } footer: {
+                Text("连接你的自托管道理鱼音乐服务器，在灵动岛中浏览你的音乐库。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if enableDaoliYu {
+                if apiClient.isAuthenticated {
+                    connectedSection
+                } else {
+                    loginSection
+                }
+
+                Section {
+                    Picker("播放品质", selection: $streamQuality) {
+                        ForEach(DaoliYuAudioQuality.allCases, id: \.rawValue) { quality in
+                            Text(quality.displayName).tag(quality)
+                        }
+                    }
+                    .onChange(of: streamQuality) { _, newValue in
+                        UserDefaults.standard.set(newValue.rawValue, forKey: "daoliYuStreamQuality")
+                    }
+
+                    Toggle("淡入淡出", isOn: $manager.crossfadeEnabled)
+
+                    if manager.crossfadeEnabled {
+                        Picker("淡入淡出时长", selection: Binding(
+                            get: { Int(manager.crossfadeDuration) },
+                            set: { manager.crossfadeDuration = TimeInterval($0) }
+                        )) {
+                            ForEach(3...10, id: \.self) { s in
+                                Text("\(s)s").tag(s)
+                            }
+                        }
+                    }
+                } header: {
+                    Text("播放")
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .onAppear {
+            serverURL = UserDefaults.standard.string(forKey: "daoliYuServerURL") ?? ""
+            username = UserDefaults.standard.string(forKey: "daoliYuUsername") ?? ""
+            let raw = UserDefaults.standard.integer(forKey: "daoliYuStreamQuality")
+            streamQuality = DaoliYuAudioQuality(rawValue: raw) ?? .original
+        }
+    }
+
+    private var connectedSection: some View {
+        Section {
+            HStack {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("已连接")
+                        .font(.body.weight(.medium))
+                    if let user = apiClient.currentUser {
+                        Text(user.displayName ?? user.username)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Spacer()
+                Button("退出登录") {
+                    apiClient.logout()
+                }
+            }
+
+            HStack {
+                Text("服务器")
+                Spacer()
+                Text(serverURL)
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
+            }
+        } header: {
+            Text("连接状态")
+        }
+    }
+
+    private var loginSection: some View {
+        Section {
+            TextField("服务器地址", text: $serverURL)
+                .textFieldStyle(.roundedBorder)
+            TextField("用户名", text: $username)
+                .textFieldStyle(.roundedBorder)
+            SecureField("密码", text: $password)
+                .textFieldStyle(.roundedBorder)
+
+            if let error = loginError {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+
+            Button {
+                Task { await performLogin() }
+            } label: {
+                HStack {
+                    if isLoggingIn {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                    Text("连接")
+                }
+            }
+            .disabled(serverURL.isEmpty || username.isEmpty || password.isEmpty || isLoggingIn)
+        } header: {
+            Text("服务器")
+        }
+    }
+
+    private func performLogin() async {
+        isLoggingIn = true
+        loginError = nil
+        do {
+            try await apiClient.login(server: serverURL, username: username, password: password)
+        } catch {
+            loginError = error.localizedDescription
+        }
+        isLoggingIn = false
     }
 }
 

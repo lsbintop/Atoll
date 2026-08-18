@@ -698,6 +698,8 @@ class MusicManager: ObservableObject {
             newController = AmazonMusicController()
         case .cider:
             newController = CiderController()
+        case .daoliYu:
+            newController = DaoliYuController()
         }
 
         // Set up state observation for the new controller
@@ -815,7 +817,9 @@ class MusicManager: ObservableObject {
         let shouldAutoPeekOnTrackChange = Defaults[.showSneakPeekOnTrackChange]
 
         if hasContentChange {
-            self.triggerFlipAnimation()
+            if state.bundleIdentifier != "com.lsbin.daoliyu" {
+                self.triggerFlipAnimation()
+            }
 
             if artworkChanged, let artwork = state.artwork {
                 self.updateArtwork(artwork)
@@ -1297,8 +1301,13 @@ class MusicManager: ObservableObject {
     }
 
     func seek(to position: TimeInterval) {
+        let target = songDuration > 0
+            ? min(max(0, position), songDuration)
+            : max(0, position)
+        elapsedTime = target
+        timestampDate = Date()
         Task {
-            await activeController?.seek(to: position)
+            await activeController?.seek(to: target)
         }
     }
 
@@ -1818,6 +1827,8 @@ extension MusicManager {
             return amazonOrange
         case .cider:
             return .accentColor
+        case .daoliYu:
+            return Color(red: 0.2, green: 0.8, blue: 0.6)
         case .nowPlaying:
             if let bundleIdentifier,
                let bundleColor = brandAccentColor(forBundleIdentifier: bundleIdentifier) {

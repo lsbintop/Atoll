@@ -182,6 +182,10 @@ struct ContentView: View {
             return CGSize(width: baseSize.width, height: terminalHeight)
         }
 
+        if coordinator.currentView == .daoliYu {
+            return CGSize(width: baseSize.width, height: 360)
+        }
+
         if coordinator.currentView == .extensionExperience {
             if let preferredHeight = extensionTabPreferredHeight(baseSize: baseSize) {
                 return CGSize(width: baseSize.width, height: preferredHeight)
@@ -1107,6 +1111,8 @@ struct ContentView: View {
                                 NotchClipboardView()
                             case .terminal:
                                 NotchTerminalView()
+                            case .daoliYu:
+                                DaoliYuLibraryView()
                             case .extensionExperience:
                                 if let payload = currentExtensionTabPayload() {
                                     ExtensionNotchExperienceTabView(payload: payload)
@@ -2604,7 +2610,8 @@ struct ContentView: View {
               !vm.hideOnClosed,
               !lockScreenManager.isLocked,
               !isMusicHUDDeferredAfterUnlock,
-              !isMusicControlWindowSuppressed else {
+              !isMusicControlWindowSuppressed,
+              Defaults[.mediaController] != .daoliYu else {
             return false
         }
 

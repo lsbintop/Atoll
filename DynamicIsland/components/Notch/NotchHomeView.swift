@@ -223,11 +223,8 @@ struct AlbumArtView: View {
             Button {
                 musicManager.openMusicApp()
             } label: {
-                ZStack(alignment:.bottomTrailing) {
-                    albumArtImage
-                    appIconOverlay
-                }
-                .albumArtFlip(angle: musicManager.flipAngle)
+                albumArtImage
+                .albumArtFlip(angle: musicManager.bundleIdentifier == "com.lsbin.daoliyu" ? 0 : musicManager.flipAngle)
                 .parallax3D()
                 .padding(.bottom, -5)
 
@@ -243,8 +240,12 @@ struct AlbumArtView: View {
         Rectangle()
             .aspectRatio(1, contentMode: .fit)
             .foregroundColor(Color.black)
-            .opacity(musicManager.isPlaying ? 0 : 0.8)
+            .opacity(musicManager.isPlaying ? 0 : (isDaoliYuMode ? 0.3 : 0.8))
             .blur(radius: 50)
+    }
+
+    private var isDaoliYuMode: Bool {
+        Defaults[.mediaController] == .daoliYu
     }
 
     private var albumArtImage: some View {
@@ -309,9 +310,9 @@ struct MusicControlsView: View {
         GeometryReader { geo in
             VStack(alignment: .leading, spacing: 4) {
                 songInfo(width: geo.size.width)
-                    .zIndex(1) // Ensure it draws above the waveform scrubber
-                musicSlider
                     .zIndex(0)
+                musicSlider
+                    .zIndex(1)
             }
         }
         .padding(.top, 10)
@@ -548,6 +549,10 @@ struct MusicControlsView: View {
     }
 
     private var displayedSlots: [MusicControlButton] {
+        if isDaoliYuActive {
+            return [.lyrics, .trackBackward, .playPause, .trackForward, .likeTrack]
+        }
+
         if showCustomControls {
             let normalized = slotConfig.normalized(allowingMediaOutput: showMediaOutputControl, isAppleMusicActive: musicManager.isAppleMusicActive, isSpotifyActive: musicManager.isSpotifyActive)
             return normalized.contains(where: { $0 != .none }) ? normalized : MusicControlButton.defaultLayout
@@ -558,6 +563,25 @@ struct MusicControlsView: View {
             return MusicControlButton.minimalLayout
         case .tenSecond:
             return [.none, .seekBackward, .playPause, .seekForward, .none]
+        }
+    }
+
+    private var isDaoliYuActive: Bool {
+        Defaults[.mediaController] == .daoliYu && DaoliYuAPIClient.shared.isAuthenticated
+    }
+
+    @ViewBuilder
+    private var daoliYuFavoriteButton: some View {
+        let trackId = DaoliYuManager.shared.playQueue.currentTrack?.id
+        let isFavorite = trackId.map { DaoliYuFavoritesManager.shared.favoriteTrackIds.contains($0) } ?? false
+        HoverButton(
+            icon: isFavorite ? "heart.fill" : "heart",
+            iconColor: isFavorite ? .pink : .white,
+            scale: .medium
+        ) {
+            if let id = trackId {
+                DaoliYuFavoritesManager.shared.toggleTrack(id: id)
+            }
         }
     }
 
@@ -626,21 +650,35 @@ struct MusicControlsView: View {
         case .airPlay:
             AirPlayPickerButton()
         case .lyrics:
-            HoverButton(
-                icon: enableLyrics ? "quote.bubble.fill" : "quote.bubble",
-                iconColor: enableLyrics ? brandAccentColor : .white,
-                scale: .medium
-            ) {
-                enableLyrics.toggle()
-            }
-        case .likeTrack:
-            LikeTrackControl { presentation, toggle in
+            if isDaoliYuActive {
                 HoverButton(
-                    icon: presentation.iconName,
-                    iconColor: presentation.isActive ? brandAccentColor : .white,
+                    icon: DaoliYuManager.shared.rightPanelMode.iconName,
+                    iconColor: brandAccentColor,
                     scale: .medium
                 ) {
-                    toggle()
+                    DaoliYuManager.shared.cycleRightPanel()
+                }
+            } else {
+                HoverButton(
+                    icon: enableLyrics ? "quote.bubble.fill" : "quote.bubble",
+                    iconColor: enableLyrics ? brandAccentColor : .white,
+                    scale: .medium
+                ) {
+                    enableLyrics.toggle()
+                }
+            }
+        case .likeTrack:
+            if isDaoliYuActive {
+                daoliYuFavoriteButton
+            } else {
+                LikeTrackControl { presentation, toggle in
+                    HoverButton(
+                        icon: presentation.iconName,
+                        iconColor: presentation.isActive ? brandAccentColor : .white,
+                        scale: .medium
+                    ) {
+                        toggle()
+                    }
                 }
             }
         }
@@ -703,6 +741,10 @@ struct NotchHomeView: View {
     private var shouldShowMusicPlayer: Bool {
         showStandardMediaControls && (!autoHideInactiveNotchMediaPlayer || musicManager.hasActiveSession)
     }
+
+    private var isDaoliYuActive: Bool {
+        Defaults[.mediaController] == .daoliYu && DaoliYuAPIClient.shared.isAuthenticated
+    }
     
     var body: some View {
         Group {
@@ -731,7 +773,23 @@ struct NotchHomeView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 
-                if Defaults[.showCalendar] {
+                if isDaoliYuActive {
+                    Group {
+                        switch DaoliYuManager.shared.rightPanelMode {
+                        case .calendar:
+                            if Defaults[.showCalendar] {
+                                CalendarView()
+                            }
+                        case .queue, .lyrics:
+                            DaoliYuRightPanelView()
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .onHover { isHovering in
+                        vm.isHoveringCalendar = isHovering
+                    }
+                    .environmentObject(vm)
+                } else if Defaults[.showCalendar] {
                     Group {
                         if shouldShowMusicPlayer {
                             CalendarView()
@@ -908,7 +966,8 @@ struct MusicSliderView: View {
             lastDragged: $lastDragged,
             onValueChange: onValueChange,
             restingTrackHeight: restingTrackHeight,
-            draggingTrackHeight: draggingTrackHeight
+            draggingTrackHeight: draggingTrackHeight,
+            dragReleaseDelay: 0.1
         )
     }
 
@@ -979,6 +1038,7 @@ struct CustomSlider: View {
     var thumbSize: CGFloat = 12
     var restingTrackHeight: CGFloat = 8
     var draggingTrackHeight: CGFloat = 14
+    var dragReleaseDelay: TimeInterval = 0
     
     @State private var isHovering: Bool = false
     @Default(.enableRealTimeWaveform) var enableRealTimeWaveform
@@ -992,34 +1052,17 @@ struct CustomSlider: View {
 
             let progress = rangeSpan == .zero ? 0 : (value - range.lowerBound) / rangeSpan
             let filledTrackWidth = min(max(progress, 0), 1) * width
-            
-            let showScrubber = isHovering && enableRealTimeWaveform && enableWaveformScrubber
 
             ZStack(alignment: .bottomLeading) {
-                // Background track
-                if showScrubber {
-                    RealTimeWaveformScrubberView(
-                        color: color,
-                        secondaryColor: Defaults[.coloredSpectrogram] ? Color(nsColor: MusicManager.shared.secondaryColor) : nil,
-                        progress: progress,
-                        minHeight: trackHeight
-                    )
-                    .frame(height: trackHeight * 3.5)
-                    .offset(y: trackHeight * 0.2)
-                } else {
-                    Rectangle()
-                        .fill(.gray.opacity(0.3))
-                        .frame(height: trackHeight)
-                        .cornerRadius(trackHeight / 2)
-                }
+                Rectangle()
+                    .fill(.gray.opacity(0.3))
+                    .frame(height: trackHeight)
+                    .cornerRadius(trackHeight / 2)
 
-                // Filled track
-                if !showScrubber {
-                    Rectangle()
-                        .fill(color)
-                        .frame(width: filledTrackWidth, height: trackHeight)
-                        .cornerRadius(trackHeight / 2)
-                }
+                Rectangle()
+                    .fill(color)
+                    .frame(width: filledTrackWidth, height: trackHeight)
+                    .cornerRadius(trackHeight / 2)
             }
             .frame(height: max(restingTrackHeight, draggingTrackHeight), alignment: .bottom)
             .contentShape(Rectangle())
@@ -1034,16 +1077,19 @@ struct CustomSlider: View {
                     }
                     .onEnded { _ in
                         onValueChange?(value)
-                        dragging = false
                         lastDragged = Date()
+                        if dragReleaseDelay > 0 {
+                            DispatchQueue.main.asyncAfter(
+                                deadline: .now() + dragReleaseDelay
+                            ) {
+                                dragging = false
+                            }
+                        } else {
+                            dragging = false
+                        }
                     }
             )
             .animation(.bouncy.speed(1.4), value: dragging)
-            .onHover { hovering in
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    isHovering = hovering
-                }
-            }
         }
     }
 }
@@ -1432,6 +1478,291 @@ final class MediaOutputVolumeViewModel: ObservableObject {
     private func syncFromController() {
         level = controller.currentVolume
         isMuted = controller.isMuted
+    }
+}
+
+// MARK: - DaoliYu Right Panel
+
+struct DaoliYuRightPanelView: View {
+    @ObservedObject private var manager = DaoliYuManager.shared
+    @ObservedObject private var lyricsManager = DaoliYuManager.shared.lyricsManager
+    @ObservedObject private var playQueue = DaoliYuManager.shared.playQueue
+
+    var body: some View {
+        VStack(spacing: 0) {
+            switch manager.rightPanelMode {
+            case .calendar:
+                EmptyView()
+            case .lyrics:
+                lyricsPanel
+            case .queue:
+                queuePanel
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var lyricsPanel: some View {
+        VStack(spacing: 0) {
+            if lyricsManager.lines.isEmpty {
+                VStack(spacing: 6) {
+                    Spacer()
+                    if lyricsManager.isLoading {
+                        ProgressView()
+                            .scaleEffect(0.5)
+                    } else {
+                        Image(systemName: "text.quote")
+                            .font(.system(size: 16))
+                            .foregroundStyle(.tertiary)
+                        Text("暂无歌词")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                }
+            } else {
+                ScrollViewReader { proxy in
+                    ScrollView(.vertical, showsIndicators: false) {
+                        LazyVStack(spacing: 4) {
+                            Spacer(minLength: 20)
+                            ForEach(lyricsManager.lines) { line in
+                                Button {
+                                    if let time = line.time {
+                                        manager.seek(to: time)
+                                    }
+                                } label: {
+                                    Text(line.text)
+                                        .font(.system(size: line.id == lyricsManager.activeLineIndex ? 14 : 12))
+                                        .fontWeight(line.id == lyricsManager.activeLineIndex ? .semibold : .regular)
+                                        .foregroundStyle(Color.white.opacity(line.id == lyricsManager.activeLineIndex ? 1.0 : 0.3))
+                                        .multilineTextAlignment(.center)
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 1)
+                                        .id(line.id)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            Spacer(minLength: 20)
+                        }
+                        .padding(.horizontal, 8)
+                    }
+                    .mask(
+                        VStack(spacing: 0) {
+                            LinearGradient(colors: [.clear, .white], startPoint: .top, endPoint: .bottom)
+                                .frame(height: 16)
+                            Color.white
+                            LinearGradient(colors: [.white, .clear], startPoint: .top, endPoint: .bottom)
+                                .frame(height: 16)
+                        }
+                    )
+                    .onChange(of: lyricsManager.activeLineIndex) { newIndex in
+                        guard newIndex >= 0 else { return }
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            proxy.scrollTo(newIndex, anchor: .center)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var queuePanel: some View {
+        VStack(spacing: 0) {
+            queueControls
+            ScrollViewReader { proxy in
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        if !playQueue.history.isEmpty {
+                            HStack {
+                                Text("播放历史")
+                                    .font(.system(size: 9, weight: .medium))
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                Button { playQueue.clearHistory() } label: {
+                                    Text("清除")
+                                        .font(.system(size: 8))
+                                        .foregroundStyle(.tertiary)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            .padding(.horizontal, 4)
+                            .padding(.top, 4)
+                            ForEach(playQueue.history.suffix(10)) { track in
+                                queueRow(track, isNowPlaying: false)
+                                    .opacity(0.5)
+                            }
+                        }
+
+                        if let current = playQueue.currentTrack {
+                            Text("正在播放")
+                                .font(.system(size: 9, weight: .medium))
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 4)
+                                .padding(.top, 6)
+                            queueNowPlayingRow(current)
+                                .id("rp_now_playing")
+                        }
+
+                        if !playQueue.queue.isEmpty {
+                            Text("即将播放 · \(playQueue.queue.count)")
+                                .font(.system(size: 9, weight: .medium))
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 4)
+                                .padding(.top, 6)
+                            ForEach(playQueue.queue.prefix(15)) { track in
+                                queueRow(track, isNowPlaying: false)
+                            }
+                        }
+
+                        if !playQueue.autoPlayTracks.isEmpty {
+                            Text("自动播放 · \(playQueue.autoPlayTracks.count)")
+                                .font(.system(size: 9, weight: .medium))
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 4)
+                                .padding(.top, 6)
+                            ForEach(playQueue.autoPlayTracks.prefix(10)) { track in
+                                queueRow(track, isNowPlaying: false)
+                            }
+                        }
+
+                        if playQueue.queue.isEmpty && playQueue.autoPlayTracks.isEmpty && playQueue.currentTrack == nil {
+                            VStack(spacing: 4) {
+                                Spacer(minLength: 20)
+                                Image(systemName: "list.bullet")
+                                    .font(.system(size: 14))
+                                    .foregroundStyle(.tertiary)
+                                Text("队列为空")
+                                    .font(.system(size: 9))
+                                    .foregroundStyle(.secondary)
+                                Spacer(minLength: 20)
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+
+                        Spacer(minLength: 8)
+                    }
+                    .padding(.horizontal, 4)
+                }
+                .onAppear {
+                    proxy.scrollTo("rp_now_playing", anchor: .top)
+                }
+                .onChange(of: manager.rightPanelMode) { _, newMode in
+                    if newMode == .queue {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                            proxy.scrollTo("rp_now_playing", anchor: .top)
+                        }
+                    }
+                }
+                .onChange(of: playQueue.currentTrack?.id) { _ in
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        proxy.scrollTo("rp_now_playing", anchor: .top)
+                    }
+                }
+            }
+        }
+    }
+
+    private var queueControls: some View {
+        HStack(spacing: 6) {
+            Button { playQueue.toggleShuffle() } label: {
+                Image(systemName: "shuffle")
+                    .font(.system(size: 8))
+                    .padding(4)
+                    .background(playQueue.shuffleEnabled ? Color.white.opacity(0.15) : Color.clear)
+                    .clipShape(Circle())
+                    .foregroundStyle(playQueue.shuffleEnabled ? .white : .white.opacity(0.4))
+            }
+            .buttonStyle(.plain)
+
+            Button { playQueue.cycleRepeat() } label: {
+                Image(systemName: playQueue.repeatMode == .one ? "repeat.1" : "repeat")
+                    .font(.system(size: 8))
+                    .padding(4)
+                    .background(playQueue.repeatMode != .off ? Color.white.opacity(0.15) : Color.clear)
+                    .clipShape(Circle())
+                    .foregroundStyle(playQueue.repeatMode != .off ? .white : .white.opacity(0.4))
+            }
+            .buttonStyle(.plain)
+
+            Button { manager.crossfadeEnabled.toggle() } label: {
+                Image(systemName: "circle.dotted.and.circle")
+                    .font(.system(size: 8))
+                    .padding(4)
+                    .background(manager.crossfadeEnabled ? Color.white.opacity(0.15) : Color.clear)
+                    .clipShape(Circle())
+                    .foregroundStyle(manager.crossfadeEnabled ? .white : .white.opacity(0.4))
+            }
+            .buttonStyle(.plain)
+
+            Button { playQueue.autoPlayEnabled.toggle() } label: {
+                Image(systemName: "infinity")
+                    .font(.system(size: 8))
+                    .padding(4)
+                    .background(playQueue.autoPlayEnabled ? Color.white.opacity(0.15) : Color.clear)
+                    .clipShape(Circle())
+                    .foregroundStyle(playQueue.autoPlayEnabled ? .white : .white.opacity(0.4))
+            }
+            .buttonStyle(.plain)
+
+            Spacer()
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+    }
+
+    private func queueNowPlayingRow(_ track: DaoliYuTrack) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "waveform")
+                .font(.system(size: 8))
+                .foregroundStyle(.white.opacity(0.6))
+                .frame(width: 12)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(track.title)
+                    .font(.system(size: 10, weight: .semibold))
+                    .lineLimit(1)
+                Text(track.artistName ?? "")
+                    .font(.system(size: 8))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer()
+            Button {
+                DaoliYuFavoritesManager.shared.toggleTrack(id: track.id)
+            } label: {
+                Image(systemName: DaoliYuFavoritesManager.shared.favoriteTrackIds.contains(track.id) ? "heart.fill" : "heart")
+                    .font(.system(size: 8))
+                    .foregroundStyle(DaoliYuFavoritesManager.shared.favoriteTrackIds.contains(track.id) ? .red : .white.opacity(0.5))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.vertical, 3)
+        .padding(.horizontal, 6)
+        .background(Color.white.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 4))
+    }
+
+    private func queueRow(_ track: DaoliYuTrack, isNowPlaying: Bool) -> some View {
+        Button {
+            if !isNowPlaying { manager.play(track: track) }
+        } label: {
+            HStack(spacing: 6) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(track.title)
+                        .font(.system(size: 10))
+                        .lineLimit(1)
+                    Text(track.artistName ?? "")
+                        .font(.system(size: 8))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer()
+            }
+            .padding(.vertical, 2)
+            .padding(.horizontal, 4)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .opacity(0.7)
     }
 }
 

@@ -295,7 +295,8 @@ class TerminalManager: ObservableObject {
             executable: shell,
             args: [],
             environment: buildEnvironment(),
-            execName: execName
+            execName: execName,
+            currentDirectory: NSHomeDirectory()
         )
         isProcessRunning = true
     }
