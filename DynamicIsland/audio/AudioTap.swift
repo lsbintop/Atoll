@@ -29,9 +29,6 @@ import os.log
 
 private let audioTapLog = OSLog(subsystem: "com.atoll.dynamicisland", category: "AudioTap")
 
-// Debug: track callback invocations
-private var callbackCount: Int = 0
-
 // CoreAudio fires this on a high-priority background real-time thread.
 let audioIOProc: AudioDeviceIOProc = {
     inDevice, inNow, inInputData, inInputTime, outOutputData, inOutputTime, clientData in
@@ -52,18 +49,6 @@ let audioIOProc: AudioDeviceIOProc = {
 
         // Pass the mono array directly to C++
         scanner.bridge.processBuffer(floatData, count: floatCount)
-        
-        // Debug: log periodically with audio level info
-        callbackCount += 1
-        if callbackCount % 1000 == 0 {
-            // Calculate max absolute value in buffer to check if audio is present
-            var maxVal: Float = 0.0
-            for i in 0..<Int(floatCount) {
-                let absVal = abs(floatData[i])
-                if absVal > maxVal { maxVal = absVal }
-            }
-            os_log(.debug, log: audioTapLog, "🔊 Audio callback fired %d times, buffer size: %d, max amplitude: %f", callbackCount, floatCount, maxVal)
-        }
     }
 
     return noErr
@@ -165,10 +150,7 @@ class AudioTap: NSObject {
     }
     
     private func startCaptureSync() {
-        guard !captureIsRunning else {
-            print("⚠️ [AudioTap] Capture already running, skipping start")
-            return
-        }
+        guard !captureIsRunning else { return }
 
         let runningApps = NSWorkspace.shared.runningApplications
         var targetPIDs: [AudioDeviceID] = []
@@ -182,38 +164,39 @@ class AudioTap: NSObject {
         // for Spotify on wired/built-in output and for every other app on any output.
         let bluetoothOutputActive = AudioRouteManager.shared.isDefaultOutputBluetooth()
 
-        for app in runningApps {
-            if let bundleID = app.bundleIdentifier, targetBundleIDs.contains(bundleID) {
+        if Defaults[.mediaController] == .daoliYu {
+            let processID = ProcessInfo.processInfo.processIdentifier
+            if let deviceID = getAudioObjectID(for: processID) {
+                targetPIDs.append(deviceID)
+            }
+        } else {
+            for app in runningApps {
+                guard let bundleID = app.bundleIdentifier,
+                      targetBundleIDs.contains(bundleID) else {
+                    continue
+                }
                 if bundleID == SpotifyController.bundleIdentifier, bluetoothOutputActive {
-                    print("⏭️ [AudioTap] Bluetooth output active — skipping Spotify tap to preserve AirPods media control")
                     continue
                 }
                 if let deviceID = getAudioObjectID(for: app.processIdentifier) {
                     targetPIDs.append(deviceID)
-                    print("🎯 [AudioTap] Found \(app.localizedName ?? "App") with PID: \(app.processIdentifier), AudioObjectID: \(deviceID)")
                 }
             }
         }
 
-        if targetPIDs.isEmpty {
-            print("⚠️ [AudioTap] None of our target apps are running right now.")
-            return
-        }
+        guard !targetPIDs.isEmpty else { return }
 
         let description = CATapDescription()
         description.processes = targetPIDs
         description.isMixdown = true
         description.isMono = true
         
-        print("📋 [AudioTap] Creating tap for \(targetPIDs.count) processes: \(targetPIDs)")
-
         tapID = AudioObjectID(kAudioObjectUnknown)
         var status = AudioHardwareCreateProcessTap(description, &tapID)
         guard status == noErr else {
-            print("🛑 [AudioTap] Tap Error: \(status) (\(fourCharCodeToString(status)))")
+            os_log(.error, log: audioTapLog, "Process tap creation failed: %{public}d (%{public}@)", status, fourCharCodeToString(status))
             return
         }
-        print("✅ [AudioTap] Created process tap with ID: \(tapID)")
 
         // Get the tap's unique hardware UID
         var tapUID: CFString = "" as CFString
@@ -228,11 +211,10 @@ class AudioTap: NSObject {
             AudioObjectGetPropertyData(tapID, &propertyAddress, 0, nil, &propertySize, uidPtr)
         }
         guard status == noErr else {
-            print("🛑 [AudioTap] UID Error: \(status) (\(fourCharCodeToString(status)))")
+            os_log(.error, log: audioTapLog, "Tap UID lookup failed: %{public}d (%{public}@)", status, fourCharCodeToString(status))
             cleanupPartialSetup()
             return
         }
-        print("✅ [AudioTap] Got tap UID: \(tapUID)")
 
         // Create the Aggregate Device (a "virtual microphone" that we can route the tap into)
         let tapList = [[kAudioSubTapUIDKey: tapUID]]
@@ -247,33 +229,30 @@ class AudioTap: NSObject {
         status = AudioHardwareCreateAggregateDevice(
             aggregateDict as CFDictionary, &aggregateDeviceID)
         guard status == noErr else {
-            print("🛑 [AudioTap] Aggregate Error: \(status) (\(fourCharCodeToString(status)))")
+            os_log(.error, log: audioTapLog, "Aggregate device creation failed: %{public}d (%{public}@)", status, fourCharCodeToString(status))
             cleanupPartialSetup()
             return
         }
-        print("✅ [AudioTap] Created aggregate device with ID: \(aggregateDeviceID)")
 
         // Bind the Callback to the device
         let selfPointer = Unmanaged.passUnretained(self).toOpaque()
         status = AudioDeviceCreateIOProcID(aggregateDeviceID, audioIOProc, selfPointer, &ioProcID)
 
         guard status == noErr, let validIOProcID = ioProcID else {
-            print("🛑 [AudioTap] IOProc Error: \(status) (\(fourCharCodeToString(status)))")
+            os_log(.error, log: audioTapLog, "IOProc creation failed: %{public}d (%{public}@)", status, fourCharCodeToString(status))
             cleanupPartialSetup()
             return
         }
-        print("✅ [AudioTap] Created IO proc")
 
         // Start listening
         status = AudioDeviceStart(aggregateDeviceID, validIOProcID)
         guard status == noErr else {
-            print("🛑 [AudioTap] Start Error: \(status) (\(fourCharCodeToString(status)))")
+            os_log(.error, log: audioTapLog, "Audio capture start failed: %{public}d (%{public}@)", status, fourCharCodeToString(status))
             cleanupPartialSetup()
             return
         }
 
         captureIsRunning = true
-        callbackCount = 0
         
         DispatchQueue.main.async { [weak self] in
             self?.updateTimer?.invalidate()
@@ -281,8 +260,6 @@ class AudioTap: NSObject {
             RunLoop.main.add(timer, forMode: .common)
             self?.updateTimer = timer
         }
-        
-        print("🟢 [AudioTap] CoreAudio CATap flowing through Aggregate Device!")
     }
     
     private func cleanupPartialSetup() {
@@ -312,17 +289,13 @@ class AudioTap: NSObject {
         // Debounce: wait 500ms before actually restarting
         let workItem = DispatchWorkItem { [weak self] in
             self?.audioQueue.async {
-                print("🔄 [AudioTap] Restarting capture...")
                 self?.stopCaptureSync()
                 // Small delay to let CoreAudio fully release resources
                 Thread.sleep(forTimeInterval: 0.1)
                 // Re-read the setting instead of trusting the state at scheduling time: the
                 // waveform can be switched off during the debounce window, and a stale
                 // restart must not bring capture back up behind the user's back.
-                guard Defaults[.enableRealTimeWaveform] else {
-                    print("⏹️ [AudioTap] Waveform disabled during restart, staying stopped")
-                    return
-                }
+                guard Defaults[.enableRealTimeWaveform] else { return }
                 self?.startCaptureSync()
             }
         }
@@ -370,8 +343,6 @@ class AudioTap: NSObject {
             // Reset display magnitudes safely on main thread
             self?.displayMagnitudes = Array(repeating: 0, count: 6)
         }
-
-        print("🔴 [AudioTap] CoreAudio CATap capture stopped")
     }
     
     var isCapturing: Bool {

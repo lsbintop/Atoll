@@ -221,8 +221,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                   targetBundleIDs.contains(bundleID) else { return }
             
             // A target music app was launched, restart capture to include it
-            if Defaults[.enableRealTimeWaveform] {
-                print("🎵 [AudioTap] Music app launched: \(bundleID), restarting capture...")
+            if Defaults[.enableRealTimeWaveform],
+               Defaults[.mediaController] != .daoliYu {
                 // Give the app a moment to fully launch
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
                     AudioTap.shared.restartCapture()
@@ -241,8 +241,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                   targetBundleIDs.contains(bundleID) else { return }
             
             // A target music app was terminated, restart capture to update the list
-            if Defaults[.enableRealTimeWaveform] {
-                print("🎵 [AudioTap] Music app terminated: \(bundleID), restarting capture...")
+            if Defaults[.enableRealTimeWaveform],
+               Defaults[.mediaController] != .daoliYu {
                 AudioTap.shared.restartCapture()
             }
         }
@@ -257,7 +257,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             queue: .main
         ) { _ in
             if Defaults[.enableRealTimeWaveform] {
-                print("🔀 [AudioTap] Audio route changed, restarting capture...")
                 AudioTap.shared.restartCapture()
             }
         }
@@ -714,6 +713,28 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
             .store(in: &cancellables)
         
+        Defaults.publisher(.mediaController, options: [])
+            .sink { change in
+                guard change.oldValue != change.newValue,
+                      Defaults[.enableRealTimeWaveform] else {
+                    return
+                }
+                AudioTap.shared.restartCapture()
+            }
+            .store(in: &cancellables)
+
+        DaoliYuManager.shared.audioEngine.$isPlaying
+            .removeDuplicates()
+            .filter { $0 }
+            .sink { _ in
+                guard Defaults[.enableRealTimeWaveform],
+                      Defaults[.mediaController] == .daoliYu else {
+                    return
+                }
+                AudioTap.shared.restartCapture()
+            }
+            .store(in: &cancellables)
+
         // Observe tab changes - use immediate resize to keep the notch pinned
         // Deferred to next run loop tick because @Published fires on willSet,
         // so coordinator.currentView still holds the OLD value at emission time.

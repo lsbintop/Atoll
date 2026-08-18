@@ -24,11 +24,11 @@ class DaoliYuController: ObservableObject, MediaControllerProtocol {
     }
 
     func play() async {
-        manager.audioEngine.resume()
+        manager.resumePlayback()
     }
 
     func pause() async {
-        manager.audioEngine.pause()
+        manager.pausePlayback()
     }
 
     func seek(to time: Double) async {

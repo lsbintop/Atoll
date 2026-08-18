@@ -21,10 +21,9 @@ import Defaults
 struct AudioVisualizerView: View {
     @Binding var isPlaying: Bool
     @Default(.enableRealTimeWaveform) private var enableRealTimeWaveform
-    @Default(.mediaController) private var mediaController
     
     var body: some View {
-        if enableRealTimeWaveform && mediaController != .daoliYu {
+        if enableRealTimeWaveform {
             RealTimeAudioSpectrumView(isPlaying: $isPlaying)
         } else {
             AudioSpectrumView(isPlaying: $isPlaying)

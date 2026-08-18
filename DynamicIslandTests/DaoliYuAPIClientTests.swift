@@ -191,4 +191,43 @@ final class DaoliYuAPIClientTests: XCTestCase {
         XCTAssertEqual(http.requests[1].value(forHTTPHeaderField: "Authorization"), "Bearer old-token")
         XCTAssertEqual(http.requests[3].value(forHTTPHeaderField: "Authorization"), "Bearer new-token")
     }
+
+    func testLyricsParserPreservesPlainTextLyrics() {
+        let lyrics = """
+        First line
+        Second line
+        Third line
+        """
+
+        let parsed = DaoliYuLyricsManager.parseLRC(lyrics)
+
+        XCTAssertEqual(parsed.map(\.text), ["First line", "Second line", "Third line"])
+        XCTAssertTrue(parsed.allSatisfy { $0.time == nil })
+    }
+
+    func testLyricsParserPreservesUntimedLinesInMixedLyrics() {
+        let lyrics = """
+        [ti:Example]
+        [00:02.00]Second timed line
+        Untimed translation
+        [00:01.00]First timed line
+        """
+
+        let parsed = DaoliYuLyricsManager.parseLRC(lyrics)
+
+        XCTAssertEqual(
+            parsed.map(\.text),
+            ["Untimed translation", "First timed line", "Second timed line"]
+        )
+        XCTAssertNil(parsed[0].time)
+        XCTAssertEqual(parsed[1].time ?? -1, 1, accuracy: 0.001)
+        XCTAssertEqual(parsed[2].time ?? -1, 2, accuracy: 0.001)
+    }
+
+    func testLyricsParserUsesFirstTimestampAndRemovesTrailingEndTimestamp() {
+        let parsed = DaoliYuLyricsManager.parseLRC("[00:01.50]Complete lyric line[00:03.250]")
+
+        XCTAssertEqual(parsed.map(\.text), ["Complete lyric line"])
+        XCTAssertEqual(parsed[0].time ?? -1, 1.5, accuracy: 0.001)
+    }
 }

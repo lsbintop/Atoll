@@ -82,7 +82,23 @@ final class DaoliYuManager: ObservableObject {
     }
 
     func togglePlayPause() {
-        audioEngine.togglePlayPause()
+        if audioEngine.isPlaying {
+            pausePlayback()
+        } else {
+            resumePlayback()
+        }
+    }
+
+    func resumePlayback() {
+        guard playQueue.currentTrack != nil else { return }
+        audioEngine.resume()
+        updateNowPlayingPlaybackState()
+        schedulePersist()
+    }
+
+    func pausePlayback() {
+        guard playQueue.currentTrack != nil else { return }
+        audioEngine.pause()
         updateNowPlayingPlaybackState()
         schedulePersist()
     }
@@ -330,36 +346,95 @@ final class DaoliYuManager: ObservableObject {
     private func setupRemoteCommands() {
         let center = MPRemoteCommandCenter.shared()
         center.playCommand.addTarget { [weak self] _ in
-            Task { @MainActor in self?.audioEngine.resume(); self?.updateNowPlayingPlaybackState() }
+            guard let self, self.playQueue.currentTrack != nil else {
+                return .noSuchContent
+            }
+            Task { @MainActor in
+                self.resumePlayback()
+            }
             return .success
         }
         center.pauseCommand.addTarget { [weak self] _ in
-            Task { @MainActor in self?.audioEngine.pause(); self?.updateNowPlayingPlaybackState() }
+            guard let self, self.playQueue.currentTrack != nil else {
+                return .noSuchContent
+            }
+            Task { @MainActor in
+                self.pausePlayback()
+            }
             return .success
         }
         center.togglePlayPauseCommand.addTarget { [weak self] _ in
-            Task { @MainActor in self?.togglePlayPause() }
+            guard let self, self.playQueue.currentTrack != nil else {
+                return .noSuchContent
+            }
+            Task { @MainActor in self.togglePlayPause() }
             return .success
         }
         center.nextTrackCommand.addTarget { [weak self] _ in
-            Task { @MainActor in self?.playNext() }
+            guard let self, self.playQueue.currentTrack != nil else {
+                return .noSuchContent
+            }
+            Task { @MainActor in self.playNext() }
             return .success
         }
         center.previousTrackCommand.addTarget { [weak self] _ in
-            Task { @MainActor in self?.playPrevious() }
+            guard let self, self.playQueue.currentTrack != nil else {
+                return .noSuchContent
+            }
+            Task { @MainActor in self.playPrevious() }
             return .success
         }
         center.changePlaybackPositionCommand.addTarget { [weak self] event in
-            guard let e = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
-            Task { @MainActor in self?.seek(to: e.positionTime) }
+            guard let self, self.playQueue.currentTrack != nil else {
+                return .noSuchContent
+            }
+            guard let e = event as? MPChangePlaybackPositionCommandEvent else {
+                return .commandFailed
+            }
+            Task { @MainActor in self.seek(to: e.positionTime) }
             return .success
+        }
+        syncRemoteCommandState()
+    }
+
+    private func syncRemoteCommandState() {
+        let center = MPRemoteCommandCenter.shared()
+        let hasTrack = playQueue.currentTrack != nil
+        let isPlaying = audioEngine.isPlaying
+
+        center.playCommand.isEnabled = hasTrack && !isPlaying
+        center.pauseCommand.isEnabled = hasTrack && isPlaying
+        center.togglePlayPauseCommand.isEnabled = hasTrack
+        center.changePlaybackPositionCommand.isEnabled = hasTrack
+        center.previousTrackCommand.isEnabled = hasTrack
+            && (audioEngine.currentTime > 3 || !playQueue.history.isEmpty)
+        center.nextTrackCommand.isEnabled = hasTrack
+            && (playQueue.remainingCount > 0
+                || playQueue.repeatMode != .off
+                || playQueue.autoPlayEnabled)
+
+        if isPlaying {
+            MPNowPlayingInfoCenter.default().playbackState = .playing
+        } else if hasTrack {
+            MPNowPlayingInfoCenter.default().playbackState = .paused
+        } else {
+            MPNowPlayingInfoCenter.default().playbackState = .stopped
         }
     }
 
     private func updateNowPlayingInfo(for track: DaoliYuTrack) {
+        let currentLyric = lyricsManager.currentLyricText
+        let title = currentLyric.flatMap { $0.isEmpty ? nil : $0 } ?? track.title
+        let artist: String
+        if currentLyric?.isEmpty == false {
+            artist = "\(track.artistName ?? "") · \(track.title)"
+        } else {
+            artist = track.artistName ?? track.artists?.compactMap(\.name).joined(separator: ", ") ?? ""
+        }
+
         var info: [String: Any] = [
-            MPMediaItemPropertyTitle: track.title,
-            MPMediaItemPropertyArtist: track.artistName ?? track.artists?.compactMap(\.name).joined(separator: ", ") ?? "",
+            MPMediaItemPropertyTitle: title,
+            MPMediaItemPropertyArtist: artist,
             MPMediaItemPropertyAlbumTitle: track.album?.title ?? "",
             MPNowPlayingInfoPropertyElapsedPlaybackTime: audioEngine.currentTime,
             MPMediaItemPropertyPlaybackDuration: audioEngine.duration > 0 ? audioEngine.duration : Double(track.durationSeconds ?? 0),
@@ -369,20 +444,24 @@ final class DaoliYuManager: ObservableObject {
             info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
         }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+        syncRemoteCommandState()
     }
 
     private func updateNowPlayingElapsedTime() {
-        guard var info = MPNowPlayingInfoCenter.default().nowPlayingInfo else { return }
-        info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = audioEngine.currentTime
-        info[MPNowPlayingInfoPropertyPlaybackRate] = audioEngine.isPlaying ? 1.0 : 0.0
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+        if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
+            info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = audioEngine.currentTime
+            info[MPNowPlayingInfoPropertyPlaybackRate] = audioEngine.isPlaying ? 1.0 : 0.0
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+        }
+        syncRemoteCommandState()
     }
 
     private func updateNowPlayingPlaybackState() {
-        guard var info = MPNowPlayingInfoCenter.default().nowPlayingInfo else { return }
-        info[MPNowPlayingInfoPropertyPlaybackRate] = audioEngine.isPlaying ? 1.0 : 0.0
-        info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = audioEngine.currentTime
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+        if let track = playQueue.currentTrack {
+            updateNowPlayingInfo(for: track)
+        } else {
+            syncRemoteCommandState()
+        }
     }
 
     private func updateNowPlayingLyrics() {
@@ -439,6 +518,7 @@ final class DaoliYuManager: ObservableObject {
         guard let track = playQueue.currentTrack else { return }
         loadAlbumArt(for: track)
         Task { await lyricsManager.load(trackId: track.id) }
+        updateNowPlayingInfo(for: track)
 
         let quality = currentQuality
         guard let url = apiClient.streamURL(trackId: track.id, quality: quality) else { return }

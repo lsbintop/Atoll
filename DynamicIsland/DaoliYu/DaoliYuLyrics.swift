@@ -12,6 +12,7 @@ final class DaoliYuLyricsManager: ObservableObject {
     @Published var activeLineIndex: Int = -1
     @Published var isLoading = false
 
+    private var loadedTrackId: String?
     private var requestedTrackId: String?
     private let client = DaoliYuAPIClient.shared
 
@@ -21,28 +22,49 @@ final class DaoliYuLyricsManager: ObservableObject {
     }
 
     func load(trackId: String) async {
-        guard requestedTrackId != trackId else { return }
+        guard loadedTrackId != trackId, requestedTrackId != trackId else { return }
         requestedTrackId = trackId
         isLoading = true
         lines = []
         activeLineIndex = -1
 
-        do {
-            let detail = try await fetchTrackDetail(trackId: trackId)
-            if let lrc = detail.lyrics {
-                lines = Self.parseLRC(lrc)
-            }
-        } catch {
-            try? await Task.sleep(nanoseconds: 400_000_000)
+        for attempt in 0..<2 {
             do {
                 let detail = try await fetchTrackDetail(trackId: trackId)
-                if let lrc = detail.lyrics {
-                    lines = Self.parseLRC(lrc)
-                }
-            } catch {}
-        }
+                guard requestedTrackId == trackId, !Task.isCancelled else { return }
 
-        isLoading = false
+                if let lyrics = detail.lyrics, !lyrics.isEmpty {
+                    lines = Self.parseLRC(lyrics)
+                }
+
+                loadedTrackId = trackId
+                requestedTrackId = nil
+                isLoading = false
+                return
+            } catch is CancellationError {
+                if requestedTrackId == trackId {
+                    requestedTrackId = nil
+                    isLoading = false
+                }
+                return
+            } catch {
+                guard requestedTrackId == trackId else { return }
+
+                if attempt == 0 {
+                    try? await Task.sleep(for: .milliseconds(400))
+                    guard !Task.isCancelled else {
+                        requestedTrackId = nil
+                        isLoading = false
+                        return
+                    }
+                    continue
+                }
+
+                requestedTrackId = nil
+                isLoading = false
+                return
+            }
+        }
     }
 
     @discardableResult
@@ -73,54 +95,67 @@ final class DaoliYuLyricsManager: ObservableObject {
         let pattern = #"\[(\d{1,3}):(\d{2})(?:[.:](\d{1,3}))?\]"#
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
 
-        var result: [(time: TimeInterval, text: String)] = []
+        var result: [(time: TimeInterval?, text: String, order: Int)] = []
+        var hasTimestamp = false
+        var order = 0
 
         for rawLine in lrc.components(separatedBy: .newlines) {
-            let line = rawLine.trimmingCharacters(in: .whitespaces)
+            let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
             if line.isEmpty { continue }
-
-            if isMetadataLine(line) { continue }
 
             let nsLine = line as NSString
             let matches = regex.matches(in: line, range: NSRange(location: 0, length: nsLine.length))
-            guard !matches.isEmpty else { continue }
-
-            var lastMatchEnd = 0
-            var timestamps: [TimeInterval] = []
-
-            for match in matches {
-                let minuteRange = match.range(at: 1)
-                let secondRange = match.range(at: 2)
-                let fracRange = match.range(at: 3)
-
-                let minutes = Double(nsLine.substring(with: minuteRange)) ?? 0
-                let seconds = Double(nsLine.substring(with: secondRange)) ?? 0
-                var fraction: Double = 0
-
-                if fracRange.location != NSNotFound {
-                    let fracStr = nsLine.substring(with: fracRange)
-                    if fracStr.count == 2 {
-                        fraction = (Double(fracStr) ?? 0) / 100.0
-                    } else if fracStr.count == 3 {
-                        fraction = (Double(fracStr) ?? 0) / 1000.0
-                    } else {
-                        fraction = (Double(fracStr) ?? 0) / pow(10, Double(fracStr.count))
-                    }
+            guard !matches.isEmpty else {
+                if !isMetadataLine(line) {
+                    result.append((time: nil, text: line, order: order))
+                    order += 1
                 }
-
-                timestamps.append(minutes * 60 + seconds + fraction)
-                lastMatchEnd = match.range.location + match.range.length
+                continue
             }
 
-            let text = nsLine.substring(from: lastMatchEnd).trimmingCharacters(in: .whitespaces)
+            hasTimestamp = true
+            let firstMatch = matches[0]
+            let minutes = Double(nsLine.substring(with: firstMatch.range(at: 1))) ?? 0
+            let seconds = Double(nsLine.substring(with: firstMatch.range(at: 2))) ?? 0
+            let fracRange = firstMatch.range(at: 3)
+            var fraction: Double = 0
+
+            if fracRange.location != NSNotFound {
+                let fracStr = nsLine.substring(with: fracRange)
+                if fracStr.count == 2 {
+                    fraction = (Double(fracStr) ?? 0) / 100.0
+                } else if fracStr.count == 3 {
+                    fraction = (Double(fracStr) ?? 0) / 1000.0
+                } else {
+                    fraction = (Double(fracStr) ?? 0) / pow(10, Double(fracStr.count))
+                }
+            }
+
+            let text = regex.stringByReplacingMatches(
+                in: line,
+                range: NSRange(location: 0, length: nsLine.length),
+                withTemplate: ""
+            ).trimmingCharacters(in: .whitespaces)
             if text.isEmpty { continue }
 
-            for ts in timestamps {
-                result.append((time: ts, text: text))
-            }
+            result.append((
+                time: minutes * 60 + seconds + fraction,
+                text: text,
+                order: order
+            ))
+            order += 1
         }
 
-        result.sort { $0.time < $1.time }
+        if hasTimestamp {
+            result.sort {
+                let lhsTime = $0.time ?? 0
+                let rhsTime = $1.time ?? 0
+                if lhsTime == rhsTime {
+                    return $0.order < $1.order
+                }
+                return lhsTime < rhsTime
+            }
+        }
 
         return result.enumerated().map { index, item in
             DaoliYuLyricLine(id: index, time: item.time, text: item.text)
@@ -128,8 +163,15 @@ final class DaoliYuLyricsManager: ObservableObject {
     }
 
     private static func isMetadataLine(_ line: String) -> Bool {
-        for tag in metadataTags {
-            if line.hasPrefix("[\(tag):") { return true }
+        let lowercased = line.lowercased()
+        for tag in metadataTags where lowercased.hasPrefix("[\(tag):") {
+            return true
+        }
+
+        if lowercased.hasPrefix("["),
+           let closingBracket = lowercased.firstIndex(of: "]"),
+           lowercased[..<closingBracket].contains(":") {
+            return true
         }
         return false
     }
