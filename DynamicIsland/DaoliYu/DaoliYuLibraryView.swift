@@ -1,6 +1,13 @@
 import SwiftUI
 import AppKit
 import Combine
+import ImageIO
+
+private let libraryScale: CGFloat = 1.5
+
+private func libraryFontSize(_ size: CGFloat) -> CGFloat {
+    max(1, (size * libraryScale).rounded(.down) - 1)
+}
 
 // MARK: - Main View
 
@@ -68,6 +75,7 @@ private struct LibraryTabView: View {
     @State private var isLoading = false
     @State private var searchText = ""
     @State private var detailContext: DetailContext?
+    @State private var parentDetailContext: DetailContext?
     @State private var searchTask: Task<Void, Never>?
     @AppStorage("daoliyu.library.songs.sort") private var songsSort: String = "recent"
     @AppStorage("daoliyu.library.songs.sortOrder") private var songsSortOrder: String = "desc"
@@ -112,12 +120,12 @@ private struct LibraryTabView: View {
     // MARK: - Library Content
 
     private var libraryContent: some View {
-        VStack(spacing: 4) {
+        VStack(spacing: 4 * libraryScale) {
             sectionPicker
             searchBar
             actionBar
             ScrollView(.vertical, showsIndicators: false) {
-                LazyVStack(spacing: 2) {
+                LazyVStack(spacing: 2 * libraryScale) {
                     if normalizedSearchText.count >= 2 {
                         switch selectedSection {
                         case .playlists:
@@ -161,13 +169,13 @@ private struct LibraryTabView: View {
                         }
                     }
                 }
-                .padding(.horizontal, 8)
+                .padding(.horizontal, 8 * libraryScale)
             }
         }
     }
 
     private var sectionPicker: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 4 * libraryScale) {
             ForEach(LibrarySection.allCases, id: \.self) { section in
                 Button {
                     withAnimation(.easeInOut(duration: 0.2)) {
@@ -175,14 +183,14 @@ private struct LibraryTabView: View {
                     }
                     handleSearchChange(searchText)
                 } label: {
-                    HStack(spacing: 3) {
+                    HStack(spacing: 3 * libraryScale) {
                         Image(systemName: section.icon)
-                            .font(.system(size: 9))
+                            .font(.system(size: libraryFontSize(9)))
                         Text(section.rawValue)
-                            .font(.system(size: 9, weight: .medium))
+                            .font(.system(size: libraryFontSize(9), weight: .medium))
                     }
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 4)
+                    .padding(.horizontal, 6 * libraryScale)
+                    .padding(.vertical, 4 * libraryScale)
                     .background(selectedSection == section ? Color.white.opacity(0.15) : Color.clear)
                     .clipShape(Capsule())
                 }
@@ -190,18 +198,18 @@ private struct LibraryTabView: View {
             }
             Spacer()
         }
-        .padding(.horizontal, 12)
-        .padding(.top, 6)
+        .padding(.horizontal, 12 * libraryScale)
+        .padding(.top, 6 * libraryScale)
     }
 
     private var searchBar: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 4 * libraryScale) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 10))
+                .font(.system(size: libraryFontSize(10)))
                 .foregroundStyle(.secondary)
             TextField("Search", text: $searchText)
                 .textFieldStyle(.plain)
-                .font(.system(size: 11))
+                .font(.system(size: libraryFontSize(11)))
                 .onChange(of: searchText) { newValue in
                     handleSearchChange(newValue)
                 }
@@ -211,34 +219,34 @@ private struct LibraryTabView: View {
                     clearRemoteSearchResults()
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 9))
+                        .font(.system(size: libraryFontSize(9)))
                         .foregroundStyle(.tertiary)
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
+        .padding(.horizontal, 8 * libraryScale)
+        .padding(.vertical, 4 * libraryScale)
         .background(Color.white.opacity(0.06))
-        .clipShape(RoundedRectangle(cornerRadius: 6))
-        .padding(.horizontal, 12)
+        .clipShape(RoundedRectangle(cornerRadius: 6 * libraryScale))
+        .padding(.horizontal, 12 * libraryScale)
     }
 
     private var actionBar: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 8 * libraryScale) {
             if selectedSection == .songs {
                 // Play All
                 Button {
                     playAll(shuffle: false)
                 } label: {
-                    HStack(spacing: 3) {
+                    HStack(spacing: 3 * libraryScale) {
                         Image(systemName: "play.fill")
-                            .font(.system(size: 8))
+                            .font(.system(size: libraryFontSize(8)))
                         Text("播放")
-                            .font(.system(size: 9, weight: .medium))
+                            .font(.system(size: libraryFontSize(9), weight: .medium))
                     }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
+                    .padding(.horizontal, 8 * libraryScale)
+                    .padding(.vertical, 3 * libraryScale)
                     .background(Color.white.opacity(0.1))
                     .clipShape(Capsule())
                 }
@@ -248,14 +256,14 @@ private struct LibraryTabView: View {
                 Button {
                     playAll(shuffle: true)
                 } label: {
-                    HStack(spacing: 3) {
+                    HStack(spacing: 3 * libraryScale) {
                         Image(systemName: "shuffle")
-                            .font(.system(size: 8))
+                            .font(.system(size: libraryFontSize(8)))
                         Text("随机播放")
-                            .font(.system(size: 9, weight: .medium))
+                            .font(.system(size: libraryFontSize(9), weight: .medium))
                     }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
+                    .padding(.horizontal, 8 * libraryScale)
+                    .padding(.vertical, 3 * libraryScale)
                     .background(Color.white.opacity(0.1))
                     .clipShape(Capsule())
                 }
@@ -274,18 +282,18 @@ private struct LibraryTabView: View {
                         Button { resort("releaseDate", "desc") } label: { Text("发行时间") }
                     }
                 } label: {
-                    HStack(spacing: 3) {
+                    HStack(spacing: 3 * libraryScale) {
                         Image(systemName: "arrow.up.arrow.down")
-                            .font(.system(size: 8))
+                            .font(.system(size: libraryFontSize(8)))
                         Text(sortLabel)
-                            .font(.system(size: 9))
+                            .font(.system(size: libraryFontSize(9)))
                     }
                     .foregroundStyle(.secondary)
                 }
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 3)
+        .padding(.horizontal, 12 * libraryScale)
+        .padding(.vertical, 3 * libraryScale)
     }
 
     private var sortLabel: String {
@@ -356,12 +364,12 @@ private struct LibraryTabView: View {
                     ProgressView().controlSize(.small)
                 } else {
                     Text("加载更多 (\(tracks.count)/\(total))")
-                        .font(.system(size: 9))
+                        .font(.system(size: libraryFontSize(9)))
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
             }
-            .padding(.vertical, 6)
+            .padding(.vertical, 6 * libraryScale)
         }
         .buttonStyle(.plain)
         .onAppear { Task { await loadMore() } }
@@ -435,18 +443,18 @@ private struct LibraryTabView: View {
     // MARK: - Rows
 
     private func trackRow(_ track: DaoliYuTrack) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 8 * libraryScale) {
             Button {
                 manager.play(track: track)
             } label: {
-                HStack(spacing: 8) {
-                    DaoliYuCoverImage(path: track.coverArt ?? track.album?.coverArt, size: 28)
-                    VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 8 * libraryScale) {
+                    DaoliYuCoverImage(path: track.coverArt ?? track.album?.coverArt, size: 28 * libraryScale)
+                    VStack(alignment: .leading, spacing: 1 * libraryScale) {
                         Text(track.title)
-                            .font(.system(size: 11, weight: .medium))
+                            .font(.system(size: libraryFontSize(11), weight: .medium))
                             .lineLimit(1)
                         Text(track.artistName ?? "")
-                            .font(.system(size: 9))
+                            .font(.system(size: libraryFontSize(9)))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
@@ -458,7 +466,7 @@ private struct LibraryTabView: View {
 
             if let duration = track.durationSeconds {
                 Text(formatDuration(duration))
-                    .font(.system(size: 9))
+                    .font(.system(size: libraryFontSize(9)))
                     .foregroundStyle(.tertiary)
             }
 
@@ -466,13 +474,13 @@ private struct LibraryTabView: View {
                 favorites.toggleTrack(id: track.id)
             } label: {
                 Image(systemName: favorites.favoriteTrackIds.contains(track.id) ? "heart.fill" : "heart")
-                    .font(.system(size: 10))
+                    .font(.system(size: libraryFontSize(10)))
                     .foregroundStyle(favorites.favoriteTrackIds.contains(track.id) ? Color.pink : Color.secondary)
             }
             .buttonStyle(.plain)
         }
-        .padding(.vertical, 4)
-        .padding(.horizontal, 6)
+        .padding(.vertical, 4 * libraryScale)
+        .padding(.horizontal, 6 * libraryScale)
         .contextMenu { trackContextMenu(track) }
     }
 
@@ -480,26 +488,26 @@ private struct LibraryTabView: View {
         Button {
             withAnimation(.easeInOut(duration: 0.2)) { detailContext = .album(album) }
         } label: {
-            HStack(spacing: 8) {
-                DaoliYuCoverImage(path: album.coverArt, size: 32)
-                VStack(alignment: .leading, spacing: 1) {
+            HStack(spacing: 8 * libraryScale) {
+                DaoliYuCoverImage(path: album.coverArt, size: 32 * libraryScale)
+                VStack(alignment: .leading, spacing: 1 * libraryScale) {
                     Text(album.title)
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(size: libraryFontSize(11), weight: .medium))
                         .lineLimit(1)
                     Text(album.albumArtist ?? "")
-                        .font(.system(size: 9))
+                        .font(.system(size: libraryFontSize(9)))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
                 Spacer()
                 if let count = album.trackCount {
                     Text("\(count) 首")
-                        .font(.system(size: 9))
+                        .font(.system(size: libraryFontSize(9)))
                         .foregroundStyle(.tertiary)
                 }
             }
-            .padding(.vertical, 4)
-            .padding(.horizontal, 6)
+            .padding(.vertical, 4 * libraryScale)
+            .padding(.horizontal, 6 * libraryScale)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -509,20 +517,20 @@ private struct LibraryTabView: View {
         Button {
             withAnimation(.easeInOut(duration: 0.2)) { detailContext = .artist(artist) }
         } label: {
-            HStack(spacing: 8) {
-                DaoliYuCoverImage(path: artist.coverArt, size: 28, isCircle: true)
+            HStack(spacing: 8 * libraryScale) {
+                DaoliYuCoverImage(path: artist.coverArt, size: 28 * libraryScale, isCircle: true)
                 Text(artist.name)
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: libraryFontSize(11), weight: .medium))
                     .lineLimit(1)
                 Spacer()
                 if let count = artist.trackCount {
                     Text("\(count) 首")
-                        .font(.system(size: 9))
+                        .font(.system(size: libraryFontSize(9)))
                         .foregroundStyle(.tertiary)
                 }
             }
-            .padding(.vertical, 4)
-            .padding(.horizontal, 6)
+            .padding(.vertical, 4 * libraryScale)
+            .padding(.horizontal, 6 * libraryScale)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -532,20 +540,20 @@ private struct LibraryTabView: View {
         Button {
             withAnimation(.easeInOut(duration: 0.2)) { detailContext = .playlist(playlist) }
         } label: {
-            HStack(spacing: 8) {
-                DaoliYuCoverImage(path: playlist.coverArt, size: 32)
-                VStack(alignment: .leading, spacing: 1) {
+            HStack(spacing: 8 * libraryScale) {
+                DaoliYuCoverImage(path: playlist.coverArt, size: 32 * libraryScale)
+                VStack(alignment: .leading, spacing: 1 * libraryScale) {
                     Text(playlist.name)
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(size: libraryFontSize(11), weight: .medium))
                         .lineLimit(1)
                     Text("\(playlist.trackCount) 首")
-                        .font(.system(size: 9))
+                        .font(.system(size: libraryFontSize(9)))
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
             }
-            .padding(.vertical, 4)
-            .padding(.horizontal, 6)
+            .padding(.vertical, 4 * libraryScale)
+            .padding(.horizontal, 6 * libraryScale)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -555,29 +563,40 @@ private struct LibraryTabView: View {
 
     @ViewBuilder
     private func detailView(for context: DetailContext) -> some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 6 * libraryScale) {
             HStack {
                 Button {
-                    withAnimation(.easeInOut(duration: 0.2)) { detailContext = nil }
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        detailContext = parentDetailContext
+                        parentDetailContext = nil
+                    }
                 } label: {
-                    HStack(spacing: 4) {
+                    HStack(spacing: 4 * libraryScale) {
                         Image(systemName: "chevron.left")
-                            .font(.system(size: 10))
+                            .font(.system(size: libraryFontSize(10)))
                         Text("返回")
-                            .font(.system(size: 10))
+                            .font(.system(size: libraryFontSize(10)))
                     }
                 }
                 .buttonStyle(.plain)
                 Spacer()
             }
-            .padding(.horizontal, 12)
-            .padding(.top, 6)
+            .padding(.horizontal, 12 * libraryScale)
+            .padding(.top, 6 * libraryScale)
 
             switch context {
             case .album(let album):
                 AlbumDetailSubview(album: album, manager: manager)
             case .artist(let artist):
-                ArtistDetailSubview(artist: artist, manager: manager)
+                ArtistDetailSubview(
+                    artist: artist,
+                    manager: manager
+                ) { album in
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        parentDetailContext = .artist(artist)
+                        detailContext = .album(album)
+                    }
+                }
             case .playlist(let playlist):
                 PlaylistDetailSubview(playlist: playlist, manager: manager)
             }
@@ -1331,23 +1350,23 @@ private struct AddToPlaylistSheet: View {
     @State private var isAdding = false
 
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 8 * libraryScale) {
             HStack {
                 Text("添加到歌单")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: libraryFontSize(11), weight: .semibold))
                 Spacer()
                 Button { dismiss() } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 12))
+                        .font(.system(size: libraryFontSize(12)))
                         .foregroundStyle(.tertiary)
                 }
                 .buttonStyle(.plain)
             }
-            .padding(.horizontal, 12)
-            .padding(.top, 8)
+            .padding(.horizontal, 12 * libraryScale)
+            .padding(.top, 8 * libraryScale)
 
             ScrollView(.vertical, showsIndicators: false) {
-                LazyVStack(spacing: 4) {
+                LazyVStack(spacing: 4 * libraryScale) {
                     ForEach(playlists) { playlist in
                         Button {
                             Task {
@@ -1356,18 +1375,18 @@ private struct AddToPlaylistSheet: View {
                                 dismiss()
                             }
                         } label: {
-                            HStack(spacing: 8) {
-                                DaoliYuCoverImage(path: playlist.coverArt, size: 24)
+                            HStack(spacing: 8 * libraryScale) {
+                                DaoliYuCoverImage(path: playlist.coverArt, size: 24 * libraryScale)
                                 Text(playlist.name)
-                                    .font(.system(size: 10))
+                                    .font(.system(size: libraryFontSize(10)))
                                     .lineLimit(1)
                                 Spacer()
                                 Text("\(playlist.trackCount)")
-                                    .font(.system(size: 9))
+                                    .font(.system(size: libraryFontSize(9)))
                                     .foregroundStyle(.tertiary)
                             }
-                            .padding(.vertical, 4)
-                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4 * libraryScale)
+                            .padding(.horizontal, 8 * libraryScale)
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
@@ -1375,9 +1394,9 @@ private struct AddToPlaylistSheet: View {
                     }
                 }
             }
-            .frame(maxHeight: 200)
+            .frame(maxHeight: 200 * libraryScale)
         }
-        .padding(.bottom, 8)
+        .padding(.bottom, 8 * libraryScale)
         .background(Color(nsColor: .windowBackgroundColor))
     }
 }
@@ -1391,19 +1410,19 @@ private struct AlbumDetailSubview: View {
     @State private var tracks: [DaoliYuTrack] = []
 
     var body: some View {
-        VStack(spacing: 4) {
-            HStack(spacing: 8) {
-                DaoliYuCoverImage(path: album.coverArt, size: 40)
-                VStack(alignment: .leading, spacing: 2) {
+        VStack(spacing: 4 * libraryScale) {
+            HStack(spacing: 8 * libraryScale) {
+                DaoliYuCoverImage(path: album.coverArt, size: 40 * libraryScale)
+                VStack(alignment: .leading, spacing: 2 * libraryScale) {
                     Text(album.title)
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: libraryFontSize(11), weight: .semibold))
                         .lineLimit(1)
                     Text(album.albumArtist ?? "")
-                        .font(.system(size: 9))
+                        .font(.system(size: libraryFontSize(9)))
                         .foregroundStyle(.secondary)
                     if let year = album.releaseYear {
                         Text("\(year)")
-                            .font(.system(size: 8))
+                            .font(.system(size: libraryFontSize(8)))
                             .foregroundStyle(.tertiary)
                     }
                 }
@@ -1412,7 +1431,7 @@ private struct AlbumDetailSubview: View {
                     if !tracks.isEmpty { manager.play(tracks: tracks.shuffled()) }
                 } label: {
                     Image(systemName: "shuffle")
-                        .font(.system(size: 11))
+                        .font(.system(size: libraryFontSize(11)))
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
@@ -1420,31 +1439,31 @@ private struct AlbumDetailSubview: View {
                     if !tracks.isEmpty { manager.play(tracks: tracks) }
                 } label: {
                     Image(systemName: "play.fill")
-                        .font(.system(size: 12))
+                        .font(.system(size: libraryFontSize(12)))
                 }
                 .buttonStyle(.plain)
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, 12 * libraryScale)
 
             ScrollView(.vertical, showsIndicators: false) {
-                LazyVStack(spacing: 2) {
+                LazyVStack(spacing: 2 * libraryScale) {
                     ForEach(tracks) { track in
-                        HStack(spacing: 6) {
+                        HStack(spacing: 6 * libraryScale) {
                             Button { manager.play(track: track) } label: {
-                                HStack(spacing: 6) {
+                                HStack(spacing: 6 * libraryScale) {
                                     if let num = track.trackNumber {
                                         Text("\(num)")
-                                            .font(.system(size: 9))
+                                            .font(.system(size: libraryFontSize(9)))
                                             .foregroundStyle(.tertiary)
-                                            .frame(width: 16)
+                                            .frame(width: 16 * libraryScale)
                                     }
                                     Text(track.title)
-                                        .font(.system(size: 10))
+                                        .font(.system(size: libraryFontSize(10)))
                                         .lineLimit(1)
                                     Spacer()
                                     if let d = track.durationSeconds {
                                         Text(formatDuration(d))
-                                            .font(.system(size: 8))
+                                            .font(.system(size: libraryFontSize(8)))
                                             .foregroundStyle(.tertiary)
                                     }
                                 }
@@ -1454,17 +1473,17 @@ private struct AlbumDetailSubview: View {
 
                             Button { favorites.toggleTrack(id: track.id) } label: {
                                 Image(systemName: favorites.favoriteTrackIds.contains(track.id) ? "heart.fill" : "heart")
-                                    .font(.system(size: 9))
+                                    .font(.system(size: libraryFontSize(9)))
                                     .foregroundStyle(favorites.favoriteTrackIds.contains(track.id) ? Color.pink : Color.secondary)
                             }
                             .buttonStyle(.plain)
                         }
-                        .padding(.vertical, 3)
-                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3 * libraryScale)
+                        .padding(.horizontal, 6 * libraryScale)
                         .contextMenu { trackContextMenu(track) }
                     }
                 }
-                .padding(.horizontal, 8)
+                .padding(.horizontal, 8 * libraryScale)
             }
         }
         .task {
@@ -1478,28 +1497,29 @@ private struct AlbumDetailSubview: View {
 private struct ArtistDetailSubview: View {
     let artist: DaoliYuArtist
     let manager: DaoliYuManager
+    let onSelectAlbum: (DaoliYuAlbum) -> Void
     @ObservedObject private var favorites = DaoliYuFavoritesManager.shared
     @State private var tracks: [DaoliYuTrack] = []
     @State private var albums: [DaoliYuAlbum] = []
 
     var body: some View {
-        VStack(spacing: 4) {
-            HStack(spacing: 8) {
-                DaoliYuCoverImage(path: artist.coverArt, size: 36, isCircle: true)
-                VStack(alignment: .leading, spacing: 2) {
+        VStack(spacing: 4 * libraryScale) {
+            HStack(spacing: 8 * libraryScale) {
+                DaoliYuCoverImage(path: artist.coverArt, size: 36 * libraryScale, isCircle: true)
+                VStack(alignment: .leading, spacing: 2 * libraryScale) {
                     Text(artist.name)
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: libraryFontSize(11), weight: .semibold))
                         .lineLimit(1)
                     if let count = artist.trackCount {
                         Text("\(count) 首")
-                            .font(.system(size: 9))
+                            .font(.system(size: libraryFontSize(9)))
                             .foregroundStyle(.secondary)
                     }
                 }
                 Spacer()
                 Button { favorites.toggleArtist(id: artist.id) } label: {
                     Image(systemName: favorites.favoriteArtistIds.contains(artist.id) ? "heart.fill" : "heart")
-                        .font(.system(size: 11))
+                        .font(.system(size: libraryFontSize(11)))
                         .foregroundStyle(favorites.favoriteArtistIds.contains(artist.id) ? Color.pink : Color.secondary)
                 }
                 .buttonStyle(.plain)
@@ -1507,7 +1527,7 @@ private struct ArtistDetailSubview: View {
                     if !tracks.isEmpty { manager.play(tracks: tracks.shuffled()) }
                 } label: {
                     Image(systemName: "shuffle")
-                        .font(.system(size: 11))
+                        .font(.system(size: libraryFontSize(11)))
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
@@ -1515,67 +1535,73 @@ private struct ArtistDetailSubview: View {
                     if !tracks.isEmpty { manager.play(tracks: tracks) }
                 } label: {
                     Image(systemName: "play.fill")
-                        .font(.system(size: 12))
+                        .font(.system(size: libraryFontSize(12)))
                 }
                 .buttonStyle(.plain)
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, 12 * libraryScale)
 
             ScrollView(.vertical, showsIndicators: false) {
-                LazyVStack(spacing: 2) {
+                LazyVStack(spacing: 2 * libraryScale) {
                     if !albums.isEmpty {
                         Text("专辑")
-                            .font(.system(size: 9, weight: .medium))
+                            .font(.system(size: libraryFontSize(9), weight: .medium))
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 6)
-                            .padding(.top, 4)
+                            .padding(.horizontal, 6 * libraryScale)
+                            .padding(.top, 4 * libraryScale)
 
                         ScrollView(.horizontal, showsIndicators: false) {
-                            LazyHStack(spacing: 8) {
+                            LazyHStack(spacing: 8 * libraryScale) {
                                 ForEach(albums) { album in
-                                    VStack(spacing: 3) {
-                                        DaoliYuCoverImage(path: album.coverArt, size: 48)
-                                        Text(album.title)
-                                            .font(.system(size: 8))
-                                            .lineLimit(1)
-                                            .frame(width: 48)
+                                    Button {
+                                        onSelectAlbum(album)
+                                    } label: {
+                                        VStack(spacing: 3 * libraryScale) {
+                                            DaoliYuCoverImage(path: album.coverArt, size: 48 * libraryScale)
+                                            Text(album.title)
+                                                .font(.system(size: libraryFontSize(8)))
+                                                .lineLimit(1)
+                                                .frame(width: 48 * libraryScale)
+                                        }
+                                        .contentShape(Rectangle())
                                     }
+                                    .buttonStyle(.plain)
                                 }
                             }
-                            .padding(.horizontal, 6)
+                            .padding(.horizontal, 6 * libraryScale)
                         }
-                        .frame(height: 68)
+                        .frame(height: 68 * libraryScale)
                     }
 
                     Text("曲目")
-                        .font(.system(size: 9, weight: .medium))
+                        .font(.system(size: libraryFontSize(9), weight: .medium))
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 6)
-                        .padding(.top, 4)
+                        .padding(.horizontal, 6 * libraryScale)
+                        .padding(.top, 4 * libraryScale)
 
                     ForEach(tracks) { track in
                         Button { manager.play(track: track) } label: {
-                            HStack(spacing: 6) {
+                            HStack(spacing: 6 * libraryScale) {
                                 Text(track.title)
-                                    .font(.system(size: 10))
+                                    .font(.system(size: libraryFontSize(10)))
                                     .lineLimit(1)
                                 Spacer()
                                 Text(track.album?.title ?? "")
-                                    .font(.system(size: 9))
+                                    .font(.system(size: libraryFontSize(9)))
                                     .foregroundStyle(.tertiary)
                                     .lineLimit(1)
                             }
-                            .padding(.vertical, 3)
-                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3 * libraryScale)
+                            .padding(.horizontal, 6 * libraryScale)
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                         .contextMenu { trackContextMenu(track) }
                     }
                 }
-                .padding(.horizontal, 8)
+                .padding(.horizontal, 8 * libraryScale)
             }
         }
         .task {
@@ -1583,8 +1609,14 @@ private struct ArtistDetailSubview: View {
                 tracks = detail.tracks ?? []
                 albums = detail.albums ?? []
             }
-            if albums.isEmpty, let result = try? await DaoliYuAPIClient.shared.fetchAlbums(take: 100, sort: "recent", sortOrder: "desc") {
-                albums = result.items.filter { $0.albumArtist?.localizedCaseInsensitiveContains(artist.name) == true }
+            if albums.isEmpty,
+               let result = try? await DaoliYuAPIClient.shared.fetchAlbums(
+                   take: 100,
+                   search: artist.name
+               ) {
+                albums = result.items.filter {
+                    $0.albumArtist?.localizedCaseInsensitiveContains(artist.name) == true
+                }
             }
         }
     }
@@ -1605,21 +1637,21 @@ private struct PlaylistDetailSubview: View {
     private let pageSize = 50
 
     var body: some View {
-        VStack(spacing: 4) {
-            HStack(spacing: 8) {
-                DaoliYuCoverImage(path: playlist.coverArt, size: 40)
-                VStack(alignment: .leading, spacing: 2) {
+        VStack(spacing: 4 * libraryScale) {
+            HStack(spacing: 8 * libraryScale) {
+                DaoliYuCoverImage(path: playlist.coverArt, size: 40 * libraryScale)
+                VStack(alignment: .leading, spacing: 2 * libraryScale) {
                     Text(playlist.name)
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: libraryFontSize(11), weight: .semibold))
                         .lineLimit(1)
                     if let desc = playlist.description, desc != "__system_default_favorites__" {
                         Text(desc)
-                            .font(.system(size: 9))
+                            .font(.system(size: libraryFontSize(9)))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
                     Text("\(totalTracks) 首")
-                        .font(.system(size: 8))
+                        .font(.system(size: libraryFontSize(8)))
                         .foregroundStyle(.tertiary)
                 }
                 Spacer()
@@ -1627,7 +1659,7 @@ private struct PlaylistDetailSubview: View {
                     if !tracks.isEmpty { manager.play(tracks: tracks.shuffled()) }
                 } label: {
                     Image(systemName: "shuffle")
-                        .font(.system(size: 11))
+                        .font(.system(size: libraryFontSize(11)))
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
@@ -1635,25 +1667,25 @@ private struct PlaylistDetailSubview: View {
                     if !tracks.isEmpty { manager.play(tracks: tracks) }
                 } label: {
                     Image(systemName: "play.fill")
-                        .font(.system(size: 12))
+                        .font(.system(size: libraryFontSize(12)))
                 }
                 .buttonStyle(.plain)
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, 12 * libraryScale)
 
             ScrollView(.vertical, showsIndicators: false) {
-                LazyVStack(spacing: 2) {
+                LazyVStack(spacing: 2 * libraryScale) {
                     ForEach(Array(tracks.enumerated()), id: \.element.id) { index, track in
-                        HStack(spacing: 6) {
+                        HStack(spacing: 6 * libraryScale) {
                             Button { manager.play(track: track) } label: {
-                                HStack(spacing: 6) {
-                                    DaoliYuCoverImage(path: track.coverArt ?? track.album?.coverArt, size: 24)
-                                    VStack(alignment: .leading, spacing: 1) {
+                                HStack(spacing: 6 * libraryScale) {
+                                    DaoliYuCoverImage(path: track.coverArt ?? track.album?.coverArt, size: 24 * libraryScale)
+                                    VStack(alignment: .leading, spacing: 1 * libraryScale) {
                                         Text(track.title)
-                                            .font(.system(size: 10))
+                                            .font(.system(size: libraryFontSize(10)))
                                             .lineLimit(1)
                                         Text(track.artistName ?? "")
-                                            .font(.system(size: 8))
+                                            .font(.system(size: libraryFontSize(8)))
                                             .foregroundStyle(.secondary)
                                             .lineLimit(1)
                                     }
@@ -1665,13 +1697,13 @@ private struct PlaylistDetailSubview: View {
 
                             Button { favorites.toggleTrack(id: track.id) } label: {
                                 Image(systemName: favorites.favoriteTrackIds.contains(track.id) ? "heart.fill" : "heart")
-                                    .font(.system(size: 9))
+                                    .font(.system(size: libraryFontSize(9)))
                                     .foregroundStyle(favorites.favoriteTrackIds.contains(track.id) ? Color.pink : Color.secondary)
                             }
                             .buttonStyle(.plain)
                         }
-                        .padding(.vertical, 2)
-                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2 * libraryScale)
+                        .padding(.horizontal, 6 * libraryScale)
                         .contextMenu { trackContextMenu(track) }
                         .onAppear {
                             if index >= tracks.count - 5 {
@@ -1687,15 +1719,15 @@ private struct PlaylistDetailSubview: View {
                                 ProgressView().controlSize(.small)
                             } else {
                                 Text("加载更多 (\(tracks.count)/\(totalTracks))")
-                                    .font(.system(size: 9))
+                                    .font(.system(size: libraryFontSize(9)))
                                     .foregroundStyle(.secondary)
                             }
                             Spacer()
                         }
-                        .padding(.vertical, 6)
+                        .padding(.vertical, 6 * libraryScale)
                     }
                 }
-                .padding(.horizontal, 8)
+                .padding(.horizontal, 8 * libraryScale)
             }
         }
         .task { await loadInitial() }
@@ -1828,8 +1860,8 @@ struct DaoliYuCoverImage: View {
         }
         .frame(width: size, height: size)
         .clipShape(isCircle ? AnyShape(Circle()) : AnyShape(RoundedRectangle(cornerRadius: size * 0.15)))
-        .task(id: path) {
-            await loader.load(path: path)
+        .task(id: "\(path ?? "")-\(size)") {
+            await loader.load(path: path, displaySize: size)
         }
     }
 
@@ -1848,16 +1880,22 @@ struct DaoliYuCoverImage: View {
 private class CoverImageLoader: ObservableObject {
     @Published var image: NSImage?
 
-    private static var cache: [String: NSImage] = [:]
+    private static let cache: NSCache<NSString, NSImage> = {
+        let cache = NSCache<NSString, NSImage>()
+        cache.countLimit = 128
+        cache.totalCostLimit = 32 * 1024 * 1024
+        return cache
+    }()
 
-    func load(path: String?) async {
+    func load(path: String?, displaySize: CGFloat) async {
         guard let url = DaoliYuAPIClient.shared.coverArtURL(path: path) else {
             image = nil
             return
         }
 
-        let key = url.absoluteString
-        if let cached = Self.cache[key] {
+        let pixelSize = max(64, Int((displaySize * 2).rounded(.up)))
+        let key = "\(url.absoluteString)#\(pixelSize)" as NSString
+        if let cached = Self.cache.object(forKey: key) {
             image = cached
             return
         }
@@ -1868,9 +1906,23 @@ private class CoverImageLoader: ObservableObject {
         }
 
         guard let (data, _) = try? await URLSession.shared.data(for: request),
-              let loaded = NSImage(data: data) else { return }
+              let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let cgImage = CGImageSourceCreateThumbnailAtIndex(
+                source,
+                0,
+                [
+                    kCGImageSourceCreateThumbnailFromImageAlways: true,
+                    kCGImageSourceCreateThumbnailWithTransform: true,
+                    kCGImageSourceThumbnailMaxPixelSize: pixelSize
+                ] as CFDictionary
+              ) else { return }
 
-        Self.cache[key] = loaded
+        let loaded = NSImage(cgImage: cgImage, size: .zero)
+        Self.cache.setObject(
+            loaded,
+            forKey: key,
+            cost: cgImage.bytesPerRow * cgImage.height
+        )
         image = loaded
     }
 }

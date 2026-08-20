@@ -1107,7 +1107,7 @@ struct ContentView: View {
                             case .notes:
                                 NotchNotesView()
                             case .clipboard:
-                                NotchClipboardView()
+                                NotchClipboardView(fixedColumns: 1)
                             case .terminal:
                                 NotchTerminalView()
                             case .daoliYu:

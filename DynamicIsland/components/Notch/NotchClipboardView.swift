@@ -184,11 +184,13 @@ struct ClipboardGridCard: View {
         HStack(spacing: 10) {
             thumbnail
             VStack(alignment: .leading, spacing: 2) {
-                Text(item.preview)
+                Text(displayPreview)
                     .font(.system(size: 13))
                     .foregroundStyle(.white)
                     .lineLimit(1)
+                    .truncationMode(.tail)
                     .multilineTextAlignment(.leading)
+                    .layoutPriority(1)
                 HStack(spacing: 6) {
                     Text(item.type.displayName)
                         .font(.system(size: 10))
@@ -231,6 +233,20 @@ struct ClipboardGridCard: View {
                 ? item.getImageData().flatMap(NSImage.init(data:))
                 : nil
         }
+    }
+
+    private var displayPreview: String {
+        let source: String
+        switch item.type {
+        case .text, .rtf, .unknown:
+            source = item.stringData ?? item.preview
+        default:
+            source = item.preview
+        }
+
+        return source
+            .split(whereSeparator: \.isWhitespace)
+            .joined(separator: " ")
     }
 
     @ViewBuilder

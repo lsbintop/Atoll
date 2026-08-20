@@ -2,6 +2,7 @@ import Foundation
 import AppKit
 import Combine
 import MediaPlayer
+import ImageIO
 
 @MainActor
 final class DaoliYuManager: ObservableObject {
@@ -47,7 +48,12 @@ final class DaoliYuManager: ObservableObject {
         rightPanelMode = rightPanelMode.next
     }
 
-    private var artworkCache: [String: NSImage] = [:]
+    private let artworkCache: NSCache<NSString, NSImage> = {
+        let cache = NSCache<NSString, NSImage>()
+        cache.countLimit = 12
+        cache.totalCostLimit = 24 * 1024 * 1024
+        return cache
+    }()
     private var dominantColorCache: [String: NSColor] = [:]
     private let imageSession = URLSession(configuration: .default)
     private var lastPositionReport: TimeInterval = 0
@@ -286,10 +292,11 @@ final class DaoliYuManager: ObservableObject {
             return
         }
 
-        let key = url.absoluteString
-        if let cached = artworkCache[key] {
+        let keyString = url.absoluteString
+        let key = keyString as NSString
+        if let cached = artworkCache.object(forKey: key) {
             albumArtImage = cached
-            dominantColor = dominantColorCache[key] ?? .black
+            dominantColor = dominantColorCache[keyString] ?? .black
             updateNowPlayingInfo(for: track)
             return
         }
@@ -299,11 +306,25 @@ final class DaoliYuManager: ObservableObject {
             var request = URLRequest(url: url)
             for (k, v) in apiClient.authHeaders() { request.setValue(v, forHTTPHeaderField: k) }
             if let (data, _) = try? await imageSession.data(for: request),
-               let image = NSImage(data: data) {
-                artworkCache[key] = image
+               let source = CGImageSourceCreateWithData(data as CFData, nil),
+               let cgImage = CGImageSourceCreateThumbnailAtIndex(
+                   source,
+                   0,
+                   [
+                       kCGImageSourceCreateThumbnailFromImageAlways: true,
+                       kCGImageSourceCreateThumbnailWithTransform: true,
+                       kCGImageSourceThumbnailMaxPixelSize: 600
+                   ] as CFDictionary
+               ) {
+                let image = NSImage(cgImage: cgImage, size: .zero)
+                artworkCache.setObject(
+                    image,
+                    forKey: key,
+                    cost: cgImage.bytesPerRow * cgImage.height
+                )
                 albumArtImage = image
                 let color = extractDominantColor(from: image)
-                dominantColorCache[key] = color
+                dominantColorCache[keyString] = color
                 dominantColor = color
             }
             isLoadingArt = false
