@@ -8659,6 +8659,8 @@ struct TerminalSettings: View {
 
 struct DaoliYuSettings: View {
     @Default(.enableDaoliYu) var enableDaoliYu
+    @Default(.daoliYuPausePlayFavoriteEnabled) private var pausePlayFavoriteEnabled
+    @Default(.daoliYuPausePlayFavoriteInterval) private var pausePlayFavoriteInterval
     @ObservedObject private var apiClient = DaoliYuAPIClient.shared
     @ObservedObject private var manager = DaoliYuManager.shared
     @State private var serverURL = ""
@@ -8711,8 +8713,38 @@ struct DaoliYuSettings: View {
                             }
                         }
                     }
+
+                    Toggle(
+                        "暂停后播放收藏",
+                        isOn: $pausePlayFavoriteEnabled
+                    )
+
+                    if pausePlayFavoriteEnabled {
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack {
+                                Text("触发间隔")
+                                Spacer()
+                                Text(
+                                    "\(pausePlayFavoriteInterval, specifier: "%.1f") 秒"
+                                )
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                            }
+                            Slider(
+                                value: $pausePlayFavoriteInterval,
+                                in: 0.5...2.0,
+                                step: 0.1
+                            )
+                        }
+                    }
                 } header: {
                     Text("播放")
+                } footer: {
+                    if pausePlayFavoriteEnabled {
+                        Text("外部控制在设定时间内连续发送暂停、播放时保持播放并收藏当前歌曲；单次暂停会在间隔结束后生效。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
         }

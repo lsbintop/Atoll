@@ -24,11 +24,11 @@ class DaoliYuController: ObservableObject, MediaControllerProtocol {
     }
 
     func play() async {
-        manager.resumePlayback()
+        manager.handleExternalPlayCommand()
     }
 
     func pause() async {
-        manager.pausePlayback()
+        manager.handleExternalPauseCommand()
     }
 
     func seek(to time: Double) async {
@@ -44,7 +44,7 @@ class DaoliYuController: ObservableObject, MediaControllerProtocol {
     }
 
     func togglePlay() async {
-        manager.togglePlayPause()
+        manager.handleExternalToggleCommand()
     }
 
     func toggleShuffle() async {

@@ -30,6 +30,19 @@ final class DaoliYuFavoritesManager: ObservableObject {
 
     // MARK: - Toggle
 
+    func favoriteTrack(id: String) {
+        guard !favoriteTrackIds.contains(id) else { return }
+        favoriteTrackIds.insert(id)
+
+        Task {
+            do {
+                try await post(path: "api/favorites/tracks", body: ["trackId": id])
+            } catch {
+                favoriteTrackIds.remove(id)
+            }
+        }
+    }
+
     func toggleTrack(id: String) {
         let wasFavorite = favoriteTrackIds.contains(id)
         if wasFavorite {

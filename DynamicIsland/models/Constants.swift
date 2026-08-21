@@ -1169,6 +1169,14 @@ extension Defaults.Keys {
     // MARK: DaoliYu
     static let enableDaoliYu = Key<Bool>("enableDaoliYu", default: false)
     static let daoliYuStreamQuality = Key<Int>("daoliYuStreamQuality", default: 0)
+    static let daoliYuPausePlayFavoriteEnabled = Key<Bool>(
+        "daoliYuPausePlayFavoriteEnabled",
+        default: true
+    )
+    static let daoliYuPausePlayFavoriteInterval = Key<Double>(
+        "daoliYuPausePlayFavoriteInterval",
+        default: 0.5
+    )
     
     // MARK: Timer Feature
     static let enableTimerFeature = Key<Bool>("enableTimerFeature", default: true)

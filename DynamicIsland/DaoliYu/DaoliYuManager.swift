@@ -1,6 +1,7 @@
 import Foundation
 import AppKit
 import Combine
+import Defaults
 import MediaPlayer
 import ImageIO
 
@@ -59,6 +60,8 @@ final class DaoliYuManager: ObservableObject {
     private var lastPositionReport: TimeInterval = 0
     private var positionReportTimer: Timer?
     private var persistDebounceTask: Task<Void, Never>?
+    private var pendingExternalPauseTask: Task<Void, Never>?
+    private var isAwaitingFavoritePlayCommand = false
 
     private init() {
         setupCallbacks()
@@ -96,6 +99,7 @@ final class DaoliYuManager: ObservableObject {
     }
 
     func resumePlayback() {
+        cancelPendingExternalPause()
         guard playQueue.currentTrack != nil else { return }
         audioEngine.resume()
         updateNowPlayingPlaybackState()
@@ -103,13 +107,54 @@ final class DaoliYuManager: ObservableObject {
     }
 
     func pausePlayback() {
+        cancelPendingExternalPause()
         guard playQueue.currentTrack != nil else { return }
         audioEngine.pause()
         updateNowPlayingPlaybackState()
         schedulePersist()
     }
 
+    func handleExternalPlayCommand() {
+        if consumePausePlayFavoriteGesture() { return }
+        resumePlayback()
+    }
+
+    func handleExternalPauseCommand() {
+        guard playQueue.currentTrack != nil else { return }
+        guard Defaults[.daoliYuPausePlayFavoriteEnabled],
+              audioEngine.isPlaying else {
+            pausePlayback()
+            return
+        }
+
+        cancelPendingExternalPause()
+        isAwaitingFavoritePlayCommand = true
+        syncRemoteCommandState()
+
+        let interval = min(
+            max(Defaults[.daoliYuPausePlayFavoriteInterval], 0.5),
+            2.0
+        )
+        pendingExternalPauseTask = Task { [weak self] in
+            try? await Task.sleep(
+                nanoseconds: UInt64(interval * 1_000_000_000)
+            )
+            guard !Task.isCancelled else { return }
+            self?.completePendingExternalPause()
+        }
+    }
+
+    func handleExternalToggleCommand() {
+        if consumePausePlayFavoriteGesture() { return }
+        if audioEngine.isPlaying {
+            handleExternalPauseCommand()
+        } else {
+            resumePlayback()
+        }
+    }
+
     func playNext() {
+        cancelPendingExternalPause()
         if let next = playQueue.next(manual: true) {
             startPlayback(track: next)
         } else {
@@ -122,6 +167,7 @@ final class DaoliYuManager: ObservableObject {
     }
 
     func playPrevious() {
+        cancelPendingExternalPause()
         if audioEngine.currentTime > 3 {
             audioEngine.seek(to: 0)
         } else if let prev = playQueue.previous() {
@@ -268,6 +314,7 @@ final class DaoliYuManager: ObservableObject {
     }
 
     private func startPlayback(track: DaoliYuTrack) {
+        cancelPendingExternalPause()
         let quality = currentQuality
         guard let url = apiClient.streamURL(trackId: track.id, quality: quality) else { return }
         let headers = apiClient.authHeaders()
@@ -371,7 +418,7 @@ final class DaoliYuManager: ObservableObject {
                 return .noSuchContent
             }
             Task { @MainActor in
-                self.resumePlayback()
+                self.handleExternalPlayCommand()
             }
             return .success
         }
@@ -380,7 +427,7 @@ final class DaoliYuManager: ObservableObject {
                 return .noSuchContent
             }
             Task { @MainActor in
-                self.pausePlayback()
+                self.handleExternalPauseCommand()
             }
             return .success
         }
@@ -388,7 +435,7 @@ final class DaoliYuManager: ObservableObject {
             guard let self, self.playQueue.currentTrack != nil else {
                 return .noSuchContent
             }
-            Task { @MainActor in self.togglePlayPause() }
+            Task { @MainActor in self.handleExternalToggleCommand() }
             return .success
         }
         center.nextTrackCommand.addTarget { [weak self] _ in
@@ -423,8 +470,11 @@ final class DaoliYuManager: ObservableObject {
         let hasTrack = playQueue.currentTrack != nil
         let isPlaying = audioEngine.isPlaying
 
-        center.playCommand.isEnabled = hasTrack && !isPlaying
-        center.pauseCommand.isEnabled = hasTrack && isPlaying
+        center.playCommand.isEnabled = hasTrack
+            && (!isPlaying || isAwaitingFavoritePlayCommand)
+        center.pauseCommand.isEnabled = hasTrack
+            && isPlaying
+            && !isAwaitingFavoritePlayCommand
         center.togglePlayPauseCommand.isEnabled = hasTrack
         center.changePlaybackPositionCommand.isEnabled = hasTrack
         center.previousTrackCommand.isEnabled = hasTrack
@@ -441,6 +491,28 @@ final class DaoliYuManager: ObservableObject {
         } else {
             MPNowPlayingInfoCenter.default().playbackState = .stopped
         }
+    }
+
+    private func consumePausePlayFavoriteGesture() -> Bool {
+        guard isAwaitingFavoritePlayCommand,
+              let track = playQueue.currentTrack else { return false }
+
+        cancelPendingExternalPause()
+        favoritesManager.favoriteTrack(id: track.id)
+        updateNowPlayingPlaybackState()
+        return true
+    }
+
+    private func completePendingExternalPause() {
+        pendingExternalPauseTask = nil
+        isAwaitingFavoritePlayCommand = false
+        pausePlayback()
+    }
+
+    private func cancelPendingExternalPause() {
+        pendingExternalPauseTask?.cancel()
+        pendingExternalPauseTask = nil
+        isAwaitingFavoritePlayCommand = false
     }
 
     private func updateNowPlayingInfo(for track: DaoliYuTrack) {
